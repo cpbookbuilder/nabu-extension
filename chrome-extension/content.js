@@ -164,7 +164,7 @@
 
   // ── Session (device ID → JWT, auto-registered on first use) ──────────────
 
-  const BACKEND_URL = 'https://annotate-ai-production.up.railway.app';
+  const BACKEND_URL = 'https://nabu-extension-production.up.railway.app';
 
   async function getSession() {
     try {

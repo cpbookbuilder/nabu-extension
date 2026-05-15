@@ -1,4 +1,4 @@
-const BACKEND_URL = 'https://annotate-ai-production.up.railway.app';
+const BACKEND_URL = 'https://nabu-extension-production.up.railway.app';
 
 // ── Tab switching ──────────────────────────────────────────────────────────
 

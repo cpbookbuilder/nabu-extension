@@ -174,7 +174,7 @@ async def landing():
     </a>
     <a class="btn-secondary" href="#install">How to install</a>
     <p style="margin-top:16px; font-size:12px; color:#475569;">
-      Direct link: <a href="/static/nabu.zip" download>annotate-ai-production.up.railway.app/static/nabu.zip</a>
+      Direct link: <a href="/static/nabu.zip" download>nabu-extension-production.up.railway.app/static/nabu.zip</a>
     </p>
   </section>
 

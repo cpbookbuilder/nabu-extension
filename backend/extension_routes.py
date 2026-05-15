@@ -26,7 +26,7 @@ JWT_EXPIRE_DAYS       = 30
 STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")
-BACKEND_URL           = os.environ.get("BACKEND_URL", "https://annotate-ai-production.up.railway.app")
+BACKEND_URL           = os.environ.get("BACKEND_URL", "https://nabu-extension-production.up.railway.app")
 
 # Fail hard if JWT_SECRET is not set or is the default placeholder
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
