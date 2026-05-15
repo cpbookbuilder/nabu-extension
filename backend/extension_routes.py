@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator, EmailStr
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_db
@@ -379,3 +379,39 @@ async def restore(req: RestoreRequest, request: Request, db: AsyncSession = Depe
         "restored": True,
         "token": make_token(req.device_id),
     }
+
+
+# ── Right to erasure (GDPR Art. 17) ───────────────────────────────────────
+
+@router.delete("/account")
+async def delete_account(
+    user: ExtensionUser = Depends(get_extension_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete all data associated with this device."""
+    await db.execute(delete(DailyUsage).where(DailyUsage.user_id == user.id))
+    await db.delete(user)
+    await db.commit()
+    return {"message": "All your data has been permanently deleted."}
+
+
+# ── Data retention cleanup ─────────────────────────────────────────────────
+
+async def purge_old_data(db: AsyncSession):
+    """
+    Delete DailyUsage records older than 60 days and
+    ExtensionUsers inactive for more than 90 days (free, no email).
+    Call this from a scheduled job or on startup.
+    """
+    cutoff_usage = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%d")
+    await db.execute(delete(DailyUsage).where(DailyUsage.date < cutoff_usage))
+
+    cutoff_user = datetime.now(timezone.utc) - timedelta(days=90)
+    await db.execute(
+        delete(ExtensionUser).where(
+            ExtensionUser.subscribed == False,
+            ExtensionUser.email == "",
+            ExtensionUser.created_at < cutoff_user,
+        )
+    )
+    await db.commit()
