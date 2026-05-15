@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nabu</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 300px; font-family: 'Google Sans', Roboto, sans-serif; background: #202124; color: #e3e3e3; }
+
+    .tabs { display: flex; border-bottom: 1px solid #3c4043; }
+    .tab { flex: 1; padding: 11px 0; background: none; border: none; color: #9aa0a6; font-size: 13px; font-family: inherit; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab.active { color: #8ab4f8; border-bottom-color: #8ab4f8; }
+    .tab:hover:not(.active) { color: #e3e3e3; }
+
+    .panel { padding: 16px; }
+    .panel[hidden] { display: none; }
+
+    /* Account */
+    .status-box { background: #303134; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .status-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .status-label { font-size: 11px; color: #9aa0a6; text-transform: uppercase; letter-spacing: .04em; }
+    .status-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+    .badge-free { background: #3c4043; color: #9aa0a6; }
+    .badge-pro  { background: #1e3a2f; color: #81c995; }
+
+    .usage-bar { background: #3c4043; border-radius: 4px; height: 5px; overflow: hidden; margin-bottom: 6px; }
+    .usage-fill { height: 100%; border-radius: 4px; background: #8ab4f8; transition: width .3s; }
+    .usage-fill.warn { background: #f28b82; }
+    .usage-text { font-size: 11px; color: #9aa0a6; }
+
+    .btn { width: 100%; border: none; border-radius: 8px; padding: 9px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+    .btn-primary { background: #8ab4f8; color: #202124; }
+    .btn-primary:hover { background: #aecbfa; }
+    .btn-secondary { background: none; color: #9aa0a6; border: 1px solid #3c4043; font-weight: 400; margin-top: 8px; }
+    .btn-secondary:hover { background: #303134; }
+
+    .restore-link { display: block; text-align: center; font-size: 11px; color: #5f6368; cursor: pointer; margin-top: 10px; }
+    .restore-link:hover { color: #9aa0a6; }
+
+    .restore-form { margin-top: 10px; display: none; }
+    .restore-form input { width: 100%; background: #303134; border: 1px solid #3c4043; border-radius: 6px; padding: 7px 10px; color: #e3e3e3; font-size: 12px; outline: none; margin-bottom: 6px; }
+    .restore-form input:focus { border-color: #8ab4f8; }
+    .restore-msg { font-size: 11px; text-align: center; margin-top: 6px; min-height: 16px; }
+
+    label { font-size: 11px; color: #9aa0a6; display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+    select { width: 100%; background: #303134; border: 1px solid #3c4043; border-radius: 8px; padding: 8px 10px; color: #e3e3e3; font-size: 13px; font-family: inherit; margin-bottom: 12px; outline: none; }
+    select:focus { border-color: #8ab4f8; }
+    select option { background: #303134; }
+    .saved { color: #81c995; font-size: 12px; text-align: center; margin-top: 8px; display: none; }
+
+    /* History */
+    #history-list { display: flex; flex-direction: column; gap: 1px; }
+    .h-entry { padding: 10px 12px; background: #2d2e2f; border-radius: 6px; cursor: pointer; }
+    .h-entry:hover { background: #3c4043; }
+    .h-anchor { font-size: 12px; color: #fdd663; font-style: italic; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .h-question { font-size: 13px; color: #e3e3e3; margin-bottom: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .h-meta { display: flex; justify-content: space-between; font-size: 11px; color: #5f6368; }
+    .h-url { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+    .empty { text-align: center; color: #5f6368; font-size: 13px; padding: 24px 0; }
+    .history-footer { margin-top: 12px; }
+
+    .footer { padding: 10px 16px; border-top: 1px solid #3c4043; text-align: center; }
+    .footer a { font-size: 11px; color: #5f6368; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="tabs">
+    <button class="tab" data-tab="account">Account</button>
+    <button class="tab active" data-tab="history">History</button>
+  </div>
+
+  <!-- Account panel -->
+  <div id="panel-account" class="panel" hidden>
+    <div class="status-box">
+      <div class="status-row">
+        <span class="status-label">Plan</span>
+        <span class="status-badge badge-free" id="plan-badge">Free</span>
+      </div>
+      <div id="usage-section">
+        <div class="usage-bar"><div class="usage-fill" id="usage-fill" style="width:0%"></div></div>
+        <div class="usage-text" id="usage-text">Loading…</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-upgrade" hidden>⚡ Upgrade — $4.99/mo</button>
+
+    <div style="margin-top: 12px;">
+      <label>Model</label>
+      <select id="model">
+        <option value="gpt-4o-mini">gpt-4o-mini (recommended)</option>
+        <option value="gpt-4o">gpt-4o</option>
+      </select>
+      <button class="btn btn-primary" id="btn-save-model">Save</button>
+      <p class="saved" id="saved">✓ Saved</p>
+    </div>
+
+    <span class="restore-link" id="restore-toggle">Restore purchase</span>
+    <div class="restore-form" id="restore-form">
+      <input type="email" id="restore-email" placeholder="Email used at checkout">
+      <button class="btn btn-primary" id="btn-restore">Restore</button>
+      <div class="restore-msg" id="restore-msg"></div>
+    </div>
+  </div>
+
+  <!-- History panel -->
+  <div id="panel-history" class="panel">
+    <div id="history-list"></div>
+    <div class="history-footer">
+      <button class="btn btn-secondary" id="see-all">See all questions ↗</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="mailto:nabu.extension@gmail.com">Need help? nabu.extension@gmail.com</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

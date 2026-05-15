@@ -1,0 +1,93 @@
+/* Floating thread button — single instance, positioned via JS, never inserted into page DOM */
+#annotate-floating-btn {
+  display: none;
+  position: fixed;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9aa0a6;
+  padding: 1px;
+  border-radius: 4px;
+  line-height: 1;
+  z-index: 2147483646;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+}
+#annotate-floating-btn.visible {
+  display: flex;
+}
+#annotate-floating-btn:hover {
+  color: #1a73e8;
+  background: rgba(26, 115, 232, 0.08);
+}
+#annotate-floating-btn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Selection popover */
+#annotate-popover {
+  position: absolute;
+  z-index: 2147483646;
+  transform: translateX(-50%);
+  background: #fff;
+  border: none;
+  border-radius: 24px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.06);
+  padding: 4px;
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+#annotate-ask, #annotate-mean, #annotate-explain, #annotate-todo, #annotate-remind {
+  border: none;
+  border-radius: 18px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Google Sans', Roboto, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#annotate-ask { background: #1a73e8; color: #fff; }
+#annotate-ask:hover { background: #1557b0; }
+#annotate-mean { background: #e6f4ea; color: #137333; }
+#annotate-mean:hover { background: #ceead6; }
+#annotate-explain { background: #f3e8fd; color: #6b21a8; }
+#annotate-explain:hover { background: #e9d5fb; }
+#annotate-todo { background: #f1f3f4; color: #202124; }
+#annotate-todo:hover { background: #e2e5e9; }
+#annotate-remind { background: #fef3e2; color: #b06000; }
+#annotate-remind:hover { background: #fde8c0; }
+
+/* Toast */
+#annotate-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  background: #202124;
+  color: #fff;
+  font-family: 'Google Sans', Roboto, sans-serif;
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  opacity: 1;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+#annotate-toast.annotate-toast-out {
+  opacity: 0;
+}
+
+/* Card wrapper — actual styles are inside shadow DOM */
+.annotate-card {
+  position: fixed;
+  right: 16px;
+  z-index: 2147483647;
+}

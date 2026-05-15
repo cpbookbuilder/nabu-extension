@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+openai
+python-dotenv
+sqlalchemy[asyncio]
+asyncpg
+greenlet
+PyJWT
+stripe
+aiofiles
+httpx
