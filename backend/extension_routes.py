@@ -1,14 +1,17 @@
 import json
 import os
-from datetime import datetime, timezone
+import re
+import time
+from collections import defaultdict
+from datetime import datetime, timezone, timedelta
 
 import jwt
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from openai import AsyncOpenAI
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, field_validator, EmailStr
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_db
@@ -18,20 +21,44 @@ router = APIRouter(prefix="/api/extension")
 openai_client = AsyncOpenAI()
 
 FREE_DAILY_LIMIT      = 10
-JWT_SECRET            = os.environ.get("JWT_SECRET", "change-me-in-production")
 JWT_ALGORITHM         = "HS256"
+JWT_EXPIRE_DAYS       = 30
 STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID       = os.environ.get("STRIPE_PRICE_ID", "")
 BACKEND_URL           = os.environ.get("BACKEND_URL", "https://annotate-ai-production.up.railway.app")
 
+# Fail hard if JWT_SECRET is not set or is the default placeholder
+JWT_SECRET = os.environ.get("JWT_SECRET", "")
+if not JWT_SECRET or JWT_SECRET == "change-me-in-production":
+    raise RuntimeError("JWT_SECRET environment variable must be set to a strong random value")
+
+# Allowed OpenAI models — prevents cost abuse via model injection
+ALLOWED_MODELS = {"gpt-4o-mini", "gpt-4o"}
+
+# Max content length per message (chars) — prevents payload abuse
+MAX_MESSAGE_LENGTH = 8_000
+MAX_MESSAGES       = 20
+
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+# Simple in-memory rate limiter for unauthenticated endpoints
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+
+def check_rate_limit(key: str, max_calls: int, window_seconds: int):
+    now = time.time()
+    bucket = _rate_buckets[key]
+    _rate_buckets[key] = [t for t in bucket if now - t < window_seconds]
+    if len(_rate_buckets[key]) >= max_calls:
+        raise HTTPException(status_code=429, detail="Too many requests. Try again later.")
+    _rate_buckets[key].append(now)
 
 
 # ── JWT ────────────────────────────────────────────────────────────────────
 
 def make_token(device_id: str) -> str:
-    return jwt.encode({"sub": device_id}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    exp = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
+    return jwt.encode({"sub": device_id, "exp": exp}, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 async def get_extension_user(
@@ -40,7 +67,10 @@ async def get_extension_user(
 ) -> ExtensionUser:
     try:
         token = authorization.removeprefix("Bearer ").strip()
-        device_id = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])["sub"]
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        device_id = payload["sub"]
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired. Please re-open the extension.")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
     result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == device_id))
@@ -51,6 +81,8 @@ async def get_extension_user(
 
 
 # ── Usage helper ───────────────────────────────────────────────────────────
+
+UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 
 async def get_or_create_usage(db: AsyncSession, user_id: str) -> DailyUsage:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -65,16 +97,25 @@ async def get_or_create_usage(db: AsyncSession, user_id: str) -> DailyUsage:
     return usage
 
 
-# ── Register (device ID → JWT, zero user interaction) ─────────────────────
+# ── Register ───────────────────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
     device_id: str
 
+    @field_validator("device_id")
+    @classmethod
+    def validate_device_id(cls, v: str) -> str:
+        if not UUID_RE.match(v):
+            raise ValueError("device_id must be a valid UUID")
+        return v
+
 
 @router.post("/register")
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    if not req.device_id or len(req.device_id) < 8:
-        raise HTTPException(status_code=400, detail="Invalid device ID")
+async def register(req: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    # Rate limit: 10 registrations per IP per hour
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(f"register:{client_ip}", max_calls=10, window_seconds=3600)
+
     result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == req.device_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -110,13 +151,44 @@ async def get_usage(
 
 # ── Annotate ───────────────────────────────────────────────────────────────
 
+ALLOWED_ROLES = {"user", "assistant", "system"}
+
 class Message(BaseModel):
     role: str
     content: str
 
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in ALLOWED_ROLES:
+            raise ValueError(f"role must be one of {ALLOWED_ROLES}")
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if len(v) > MAX_MESSAGE_LENGTH:
+            raise ValueError(f"message content exceeds {MAX_MESSAGE_LENGTH} characters")
+        return v
+
+
 class AnnotateRequest(BaseModel):
     messages: list[Message]
     model: str = "gpt-4o-mini"
+
+    @field_validator("model")
+    @classmethod
+    def validate_model(cls, v: str) -> str:
+        if v not in ALLOWED_MODELS:
+            return "gpt-4o-mini"  # silently fall back rather than erroring
+        return v
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, v: list) -> list:
+        if len(v) > MAX_MESSAGES:
+            raise ValueError(f"too many messages (max {MAX_MESSAGES})")
+        return v
 
 
 @router.post("/annotate")
@@ -125,14 +197,37 @@ async def annotate(
     user: ExtensionUser = Depends(get_extension_user),
     db: AsyncSession = Depends(get_db),
 ):
-    usage = await get_or_create_usage(db, user.id)
-    if not user.subscribed and usage.count >= FREE_DAILY_LIMIT:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Free limit of {FREE_DAILY_LIMIT} questions/day reached. Upgrade for unlimited access.",
+    # Atomic increment with limit check to prevent race condition
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    if not user.subscribed:
+        # Use atomic UPDATE with conditional to avoid race condition
+        result = await db.execute(
+            update(DailyUsage)
+            .where(
+                DailyUsage.user_id == user.id,
+                DailyUsage.date == today,
+                DailyUsage.count < FREE_DAILY_LIMIT,
+            )
+            .values(count=DailyUsage.count + 1)
+            .returning(DailyUsage.count)
         )
-    usage.count += 1
-    await db.commit()
+        updated = result.fetchone()
+
+        if updated is None:
+            # Either row doesn't exist or limit already reached — check which
+            usage = await get_or_create_usage(db, user.id)
+            await db.commit()
+            if usage.count >= FREE_DAILY_LIMIT:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Free limit of {FREE_DAILY_LIMIT} questions/day reached. Upgrade for unlimited access.",
+                )
+            # Row was just created (count=0), increment it
+            usage.count = 1
+            await db.commit()
+        else:
+            await db.commit()
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
 
@@ -144,8 +239,9 @@ async def annotate(
                 async for event in s:
                     if event.type == "content.delta":
                         yield f"data: {json.dumps({'delta': event.delta})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        except Exception:
+            # Don't leak internal error details (API keys, internal messages etc.)
+            yield f"data: {json.dumps({'error': 'An error occurred. Please try again.'})}\n\n"
         finally:
             yield "data: [DONE]\n\n"
 
@@ -205,7 +301,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         session = event["data"]["object"]
         device_id = session.get("metadata", {}).get("device_id")
         email = session.get("customer_details", {}).get("email", "")
-        if device_id:
+        if device_id and UUID_RE.match(str(device_id)):
             result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == device_id))
             user = result.scalar_one_or_none()
             if user:
@@ -234,17 +330,40 @@ class RestoreRequest(BaseModel):
     email: str
     device_id: str
 
+    @field_validator("device_id")
+    @classmethod
+    def validate_device_id(cls, v: str) -> str:
+        if not UUID_RE.match(v):
+            raise ValueError("device_id must be a valid UUID")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or len(v) > 254:
+            raise ValueError("Invalid email")
+        return v
+
+
+# Constant-time response to prevent email enumeration
+_RESTORE_GENERIC = "If an active subscription exists for this email, it has been restored."
 
 @router.post("/restore")
-async def restore(req: RestoreRequest, db: AsyncSession = Depends(get_db)):
+async def restore(req: RestoreRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    # Rate limit: 5 restore attempts per IP per hour
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(f"restore:{client_ip}", max_calls=5, window_seconds=3600)
+
     result = await db.execute(
         select(ExtensionUser).where(ExtensionUser.email == req.email)
     )
     user = result.scalar_one_or_none()
-    if not user or not user.subscribed:
-        raise HTTPException(status_code=404, detail="No active subscription found for this email.")
 
-    # Move subscription to new device
+    # Always return the same response to prevent email enumeration
+    if not user or not user.subscribed:
+        return {"message": _RESTORE_GENERIC, "restored": False}
+
     new_user = ExtensionUser(
         id=req.device_id,
         email=user.email,
@@ -255,4 +374,8 @@ async def restore(req: RestoreRequest, db: AsyncSession = Depends(get_db)):
     await db.flush()
     db.add(new_user)
     await db.commit()
-    return {"token": make_token(req.device_id), "subscribed": True}
+    return {
+        "message": _RESTORE_GENERIC,
+        "restored": True,
+        "token": make_token(req.device_id),
+    }

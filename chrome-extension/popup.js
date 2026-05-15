@@ -109,13 +109,13 @@ async function restore() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, device_id }),
     });
-    if (!res.ok) {
-      msg.textContent = 'No active subscription found for this email.';
-      msg.style.color = '#f28b82';
+    const data = await res.json();
+    if (!res.ok || !data.restored) {
+      msg.textContent = 'If a subscription exists for this email, it has been restored.';
+      msg.style.color = '#9aa0a6';
       return;
     }
-    const { token } = await res.json();
-    await chrome.storage.local.set({ annotate_jwt: token });
+    await chrome.storage.local.set({ annotate_jwt: data.token });
     msg.textContent = '✓ Subscription restored!';
     msg.style.color = '#81c995';
     document.getElementById('restore-form').style.display = 'none';
