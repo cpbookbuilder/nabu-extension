@@ -593,19 +593,33 @@
         const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
         const hoursLeft = Math.ceil((midnight - now) / 3600000);
         const resetMsg = hoursLeft <= 1 ? 'Resets in less than 1 hour.' : `Resets in ${hoursLeft} hours.`;
-        msgEl.innerHTML = `Daily limit reached. ${resetMsg} <a href="#" style="color:#1a73e8;text-decoration:underline;" id="nabu-upgrade-link">Upgrade for $0.99/mo</a> for unlimited access.`;
+        msgEl.innerHTML = `Daily limit reached. ${resetMsg} <span style="color:#1a73e8;text-decoration:underline;cursor:pointer;" id="nabu-upgrade-link">Upgrade for $0.99/mo</span> for unlimited access.`;
 
         msgEl.style.color = '#c5221f';
-        msgEl.querySelector('#nabu-upgrade-link').addEventListener('click', async (e) => {
+        const upgradeLink = msgEl.querySelector('#nabu-upgrade-link');
+        upgradeLink.addEventListener('click', async (e) => {
           e.preventDefault();
+          e.stopPropagation();
+          upgradeLink.textContent = 'Opening checkout…';
           const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-          if (!annotate_jwt) return;
-          const res = await fetch(`${BACKEND_URL}/api/extension/create-checkout`, {
-            method: 'POST', headers: { Authorization: `Bearer ${annotate_jwt}` },
-          }).catch(() => null);
-          if (res?.ok) {
+          if (!annotate_jwt) {
+            upgradeLink.textContent = 'Session error — refresh and try again';
+            return;
+          }
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/extension/create-checkout`, {
+              method: 'POST', headers: { Authorization: `Bearer ${annotate_jwt}` },
+            });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              upgradeLink.textContent = `Error: ${err.detail || res.status}`;
+              return;
+            }
             const { url } = await res.json();
             window.open(url, '_blank');
+            upgradeLink.textContent = 'Upgrade for $0.99/mo';
+          } catch (err) {
+            upgradeLink.textContent = `Error: ${err.message}`;
           }
         });
       } else {
