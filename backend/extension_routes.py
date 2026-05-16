@@ -297,40 +297,58 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        device_id = session.get("metadata", {}).get("device_id")
-        email = session.get("customer_details", {}).get("email", "")
+    etype = event["type"]
+    obj   = event["data"]["object"]
+
+    async def get_user_by_customer(customer_id: str) -> ExtensionUser | None:
+        if not customer_id:
+            return None
+        result = await db.execute(
+            select(ExtensionUser).where(ExtensionUser.stripe_customer_id == customer_id)
+        )
+        return result.scalar_one_or_none()
+
+    if etype == "checkout.session.completed":
+        device_id = obj.get("metadata", {}).get("device_id")
+        email     = obj.get("customer_details", {}).get("email", "")
         if device_id and UUID_RE.match(str(device_id)):
             result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == device_id))
             user = result.scalar_one_or_none()
             if user:
                 user.subscribed = True
                 user.email = email
-                user.stripe_customer_id = session.get("customer")
+                user.stripe_customer_id = obj.get("customer")
                 await db.commit()
 
-    elif event["type"] == "customer.subscription.resumed":
-        customer_id = event["data"]["object"].get("customer")
-        if customer_id:
-            result = await db.execute(
-                select(ExtensionUser).where(ExtensionUser.stripe_customer_id == customer_id)
-            )
-            user = result.scalar_one_or_none()
-            if user:
-                user.subscribed = True
-                await db.commit()
+    elif etype in ("customer.subscription.resumed", "invoice.paid"):
+        # Subscription active / payment succeeded — ensure access is on
+        customer_id = obj.get("customer")
+        user = await get_user_by_customer(customer_id)
+        if user and not user.subscribed:
+            user.subscribed = True
+            await db.commit()
 
-    elif event["type"] in ("customer.subscription.deleted", "customer.subscription.paused"):
-        customer_id = event["data"]["object"].get("customer")
-        if customer_id:
-            result = await db.execute(
-                select(ExtensionUser).where(ExtensionUser.stripe_customer_id == customer_id)
-            )
-            user = result.scalar_one_or_none()
-            if user:
-                user.subscribed = False
-                await db.commit()
+    elif etype in ("customer.subscription.deleted", "customer.subscription.paused"):
+        # Subscription cancelled or paused — revoke access
+        user = await get_user_by_customer(obj.get("customer"))
+        if user:
+            user.subscribed = False
+            await db.commit()
+
+    elif etype == "invoice.payment_failed":
+        # Card declined — don't revoke immediately (Stripe retries),
+        # but flag it so we can surface a warning if needed in future
+        # For now: leave subscribed=True until Stripe fires subscription.deleted
+        pass
+
+    elif etype == "customer.subscription.updated":
+        # Catch-all for status changes (trial end, plan switch, etc.)
+        customer_id = obj.get("customer")
+        status      = obj.get("status")  # active, past_due, canceled, paused, trialing, etc.
+        user = await get_user_by_customer(customer_id)
+        if user:
+            user.subscribed = status in ("active", "trialing")
+            await db.commit()
 
     return {"ok": True}
 
