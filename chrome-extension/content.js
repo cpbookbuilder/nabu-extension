@@ -568,7 +568,28 @@
       scheduleSave();
     } catch (err) {
       msgEl.classList.remove('streaming');
-      if (err.name !== 'AbortError') {
+      if (err.name === 'AbortError') return;
+      if (err.isLimitReached) {
+        const now = new Date();
+        const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+        const hoursLeft = Math.ceil((midnight - now) / 3600000);
+        const resetMsg = hoursLeft <= 1 ? 'Resets in less than 1 hour.' : `Resets in ${hoursLeft} hours.`;
+        msgEl.innerHTML = `Daily limit reached. ${resetMsg} <a href="#" style="color:#1a73e8;text-decoration:underline;" id="nabu-upgrade-link">Upgrade for $0.99/mo</a> for unlimited access.`;
+
+        msgEl.style.color = '#c5221f';
+        msgEl.querySelector('#nabu-upgrade-link').addEventListener('click', async (e) => {
+          e.preventDefault();
+          const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
+          if (!annotate_jwt) return;
+          const res = await fetch(`${BACKEND_URL}/api/extension/create-checkout`, {
+            method: 'POST', headers: { Authorization: `Bearer ${annotate_jwt}` },
+          }).catch(() => null);
+          if (res?.ok) {
+            const { url } = await res.json();
+            window.open(url, '_blank');
+          }
+        });
+      } else {
         msgEl.textContent = `Error: ${err.message}`;
         msgEl.style.color = '#c5221f';
       }
@@ -663,8 +684,9 @@
       throw new Error('Session expired — please try again.');
     }
     if (res.status === 429) {
-      const { detail } = await res.json().catch(() => ({}));
-      throw new Error(detail || 'Daily limit reached. Upgrade for unlimited access.');
+      const err = new Error('limit_reached');
+      err.isLimitReached = true;
+      throw err;
     }
     if (!res.ok) throw new Error(`Server error ${res.status}`);
 

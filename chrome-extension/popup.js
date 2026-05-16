@@ -69,8 +69,14 @@ async function loadUsage() {
       const fill = document.getElementById('usage-fill');
       fill.style.width = `${pct}%`;
       fill.classList.toggle('warn', remaining === 0);
-      document.getElementById('usage-text').textContent =
-        remaining === 0 ? `Limit reached — resets midnight UTC` : `${count} of ${limit} free questions used today`;
+      let usageText = `${count} of ${limit} free questions used today`;
+      if (remaining === 0) {
+        const now = new Date();
+        const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+        const hoursLeft = Math.ceil((midnight - now) / 3600000);
+        usageText = hoursLeft <= 1 ? 'Limit reached — resets in less than 1 hour' : `Limit reached — resets in ${hoursLeft} hours`;
+      }
+      document.getElementById('usage-text').textContent = usageText;
       document.getElementById('btn-upgrade').hidden = false;
       document.getElementById('btn-upgrade').textContent = '⚡ Upgrade — $0.99/mo';
     }
