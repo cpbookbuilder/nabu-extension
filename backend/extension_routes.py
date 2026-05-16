@@ -310,6 +310,17 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 user.stripe_customer_id = session.get("customer")
                 await db.commit()
 
+    elif event["type"] == "customer.subscription.resumed":
+        customer_id = event["data"]["object"].get("customer")
+        if customer_id:
+            result = await db.execute(
+                select(ExtensionUser).where(ExtensionUser.stripe_customer_id == customer_id)
+            )
+            user = result.scalar_one_or_none()
+            if user:
+                user.subscribed = True
+                await db.commit()
+
     elif event["type"] in ("customer.subscription.deleted", "customer.subscription.paused"):
         customer_id = event["data"]["object"].get("customer")
         if customer_id:
