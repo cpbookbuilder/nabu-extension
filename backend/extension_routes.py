@@ -265,7 +265,6 @@ async def create_checkout(user: ExtensionUser = Depends(get_extension_user)):
             success_url=f"{BACKEND_URL}/api/extension/checkout-success",
             cancel_url=f"{BACKEND_URL}/api/extension/checkout-cancel",
             metadata={"device_id": user.id},
-            customer_creation="always",
         )
         return {"url": session.url}
     except stripe.StripeError as e:
