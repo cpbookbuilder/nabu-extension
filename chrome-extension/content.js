@@ -166,18 +166,37 @@
 
   const BACKEND_URL = 'https://nabu-extension-production.up.railway.app';
 
+  // Retry a fetch-based operation on network errors (not HTTP errors).
+  // Handles Railway redeployment windows (~30s downtime).
+  async function withRetry(fn, retries = 4, delayMs = 3000) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        const isNetworkError = err instanceof TypeError; // fetch throws TypeError on network failure
+        if (!isNetworkError || i === retries - 1) throw err;
+        await new Promise(r => setTimeout(r, delayMs * (i + 1))); // 3s, 6s, 9s, 12s
+      }
+    }
+  }
+
   async function getSession() {
     try {
-      const { annotate_jwt, device_id } = await chrome.storage.local.get(['annotate_jwt', 'device_id']);
-      if (annotate_jwt && device_id) return { jwt: annotate_jwt, device_id };
+      let { annotate_jwt, device_id } = await chrome.storage.local.get(['annotate_jwt', 'device_id']);
 
-      if (!device_id) return null;
+      // Generate device_id if missing (onInstalled may not have fired yet)
+      if (!device_id) {
+        device_id = crypto.randomUUID();
+        await chrome.storage.local.set({ device_id });
+      }
 
-      const res = await fetch(`${BACKEND_URL}/api/extension/register`, {
+      if (annotate_jwt) return { jwt: annotate_jwt, device_id };
+
+      const res = await withRetry(() => fetch(`${BACKEND_URL}/api/extension/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device_id }),
-      });
+      }));
       if (!res.ok) return null;
       const { token } = await res.json();
       await chrome.storage.local.set({ annotate_jwt: token });
@@ -544,7 +563,7 @@
 
     const session = await getSession();
     if (!session) {
-      addMsg(thread, 'assistant', '⚠️ Could not connect to Nabu servers. Check your internet connection.');
+      addMsg(thread, 'assistant', '⚠️ Could not reach Nabu servers. The server may be starting up — please try again in a moment.');
       return;
     }
 
@@ -673,11 +692,15 @@
   }
 
   async function streamFromBackend(messages, el, thread, jwt, model) {
-    const res = await fetch(`${BACKEND_URL}/api/extension/annotate`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, model }),
-      signal: thread.abortCtrl.signal,
+    let attempt = 0;
+    const res = await withRetry(async () => {
+      if (attempt++ > 0) el.textContent = `Connecting… (attempt ${attempt})`;
+      return fetch(`${BACKEND_URL}/api/extension/annotate`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, model }),
+        signal: thread.abortCtrl.signal,
+      });
     });
     if (res.status === 401) {
       await chrome.storage.local.remove('annotate_jwt');
