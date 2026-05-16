@@ -34,7 +34,7 @@ if not JWT_SECRET or JWT_SECRET == "change-me-in-production":
     raise RuntimeError("JWT_SECRET environment variable must be set to a strong random value")
 
 # Allowed OpenAI models — prevents cost abuse via model injection
-ALLOWED_MODELS = {"gpt-4o-mini", "gpt-4o"}
+ALLOWED_MODELS = {"gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano", "gpt-4o-mini", "gpt-4o"}
 
 # Max content length per message (chars) — prevents payload abuse
 MAX_MESSAGE_LENGTH = 8_000
@@ -174,13 +174,13 @@ class Message(BaseModel):
 
 class AnnotateRequest(BaseModel):
     messages: list[Message]
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-4.1-mini"
 
     @field_validator("model")
     @classmethod
     def validate_model(cls, v: str) -> str:
         if v not in ALLOWED_MODELS:
-            return "gpt-4o-mini"  # silently fall back rather than erroring
+            return "gpt-4.1-mini"  # silently fall back rather than erroring
         return v
 
     @field_validator("messages")

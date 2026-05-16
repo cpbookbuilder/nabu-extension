@@ -187,9 +187,9 @@
 
   async function getModel() {
     try {
-      const { model = 'gpt-4o-mini' } = await chrome.storage.sync.get('model');
+      const { model = 'gpt-4.1-mini' } = await chrome.storage.sync.get('model');
       return model;
-    } catch (_) { return 'gpt-4o-mini'; }
+    } catch (_) { return 'gpt-4.1-mini'; }
   }
 
   function isOurShadowDOM(el) {

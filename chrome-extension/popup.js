@@ -19,7 +19,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 document.addEventListener('DOMContentLoaded', async () => {
   renderHistory();
 
-  const { model = 'gpt-4o-mini' } = await chrome.storage.sync.get('model');
+  const { model = 'gpt-4.1-mini' } = await chrome.storage.sync.get('model');
   document.getElementById('model').value = model;
 
   document.getElementById('btn-save-model').addEventListener('click', async () => {
@@ -72,6 +72,7 @@ async function loadUsage() {
       document.getElementById('usage-text').textContent =
         remaining === 0 ? `Limit reached — resets midnight UTC` : `${count} of ${limit} free questions used today`;
       document.getElementById('btn-upgrade').hidden = false;
+      document.getElementById('btn-upgrade').textContent = '⚡ Upgrade — $0.99/mo';
     }
   } catch (_) {}
 }

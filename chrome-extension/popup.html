@@ -64,6 +64,10 @@
   </style>
 </head>
 <body>
+  <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #3c4043;">
+    <img src="icons/icon32.png" width="20" height="20" style="border-radius:4px;">
+    <span style="font-weight:700;font-size:14px;color:#f6c344;letter-spacing:.01em;">Nabu</span>
+  </div>
   <div class="tabs">
     <button class="tab" data-tab="account">Account</button>
     <button class="tab active" data-tab="history">History</button>
@@ -82,13 +86,20 @@
       </div>
     </div>
 
-    <button class="btn btn-primary" id="btn-upgrade" hidden>⚡ Upgrade — $0.99/mo</button>
+    <button class="btn btn-primary" id="btn-upgrade">⚡ Upgrade — $0.99/mo</button>
 
     <div style="margin-top: 12px;">
       <label>Model</label>
       <select id="model">
-        <option value="gpt-4o-mini">gpt-4o-mini (recommended)</option>
-        <option value="gpt-4o">gpt-4o</option>
+        <optgroup label="GPT-4.1">
+          <option value="gpt-4.1-mini">gpt-4.1-mini (recommended)</option>
+          <option value="gpt-4.1">gpt-4.1</option>
+          <option value="gpt-4.1-nano">gpt-4.1-nano (fastest)</option>
+        </optgroup>
+        <optgroup label="GPT-4o">
+          <option value="gpt-4o-mini">gpt-4o-mini</option>
+          <option value="gpt-4o">gpt-4o</option>
+        </optgroup>
       </select>
       <button class="btn btn-primary" id="btn-save-model">Save</button>
       <p class="saved" id="saved">✓ Saved</p>
