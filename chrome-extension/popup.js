@@ -79,16 +79,31 @@ async function loadUsage() {
 // ── Upgrade ────────────────────────────────────────────────────────────────
 
 async function upgrade() {
+  const btn = document.getElementById('btn-upgrade');
   const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-  if (!annotate_jwt) return;
+  if (!annotate_jwt) {
+    alert('Please open a page and ask a question first to activate your account.');
+    return;
+  }
+  btn.textContent = 'Opening checkout…';
+  btn.disabled = true;
   try {
     const res = await fetch(`${BACKEND_URL}/api/extension/create-checkout`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${annotate_jwt}` },
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error ${res.status}`);
+    }
     const { url } = await res.json();
     chrome.tabs.create({ url });
-  } catch (_) {}
+  } catch (err) {
+    alert(`Upgrade failed: ${err.message}`);
+  } finally {
+    btn.textContent = '⚡ Upgrade — $0.99/mo';
+    btn.disabled = false;
+  }
 }
 
 // ── Restore purchase ───────────────────────────────────────────────────────
