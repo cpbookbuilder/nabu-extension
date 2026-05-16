@@ -113,13 +113,12 @@ class RegisterRequest(BaseModel):
 
 @router.post("/register")
 async def register(req: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    # Rate limit: 10 registrations per IP per hour
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(f"register:{client_ip}", max_calls=10, window_seconds=3600)
-
     result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == req.device_id))
     user = result.scalar_one_or_none()
     if not user:
+        # Only rate-limit actual new registrations (not token refreshes for existing devices)
+        client_ip = request.client.host if request.client else "unknown"
+        check_rate_limit(f"register:{client_ip}", max_calls=10, window_seconds=3600)
         user = ExtensionUser(id=req.device_id, email="")
         db.add(user)
         await db.commit()

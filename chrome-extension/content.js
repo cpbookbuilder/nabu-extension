@@ -181,27 +181,28 @@
   }
 
   async function getSession() {
-    try {
-      let { annotate_jwt, device_id } = await chrome.storage.local.get(['annotate_jwt', 'device_id']);
+    let { annotate_jwt, device_id } = await chrome.storage.local.get(['annotate_jwt', 'device_id']);
 
-      // Generate device_id if missing (onInstalled may not have fired yet)
-      if (!device_id) {
-        device_id = crypto.randomUUID();
-        await chrome.storage.local.set({ device_id });
-      }
+    // Generate device_id if missing (onInstalled may not have fired yet)
+    if (!device_id) {
+      device_id = crypto.randomUUID();
+      await chrome.storage.local.set({ device_id });
+    }
 
-      if (annotate_jwt) return { jwt: annotate_jwt, device_id };
+    if (annotate_jwt) return { jwt: annotate_jwt, device_id };
 
-      const res = await withRetry(() => fetch(`${BACKEND_URL}/api/extension/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_id }),
-      }));
-      if (!res.ok) return null;
-      const { token } = await res.json();
-      await chrome.storage.local.set({ annotate_jwt: token });
-      return { jwt: token, device_id };
-    } catch (_) { return null; }
+    const res = await withRetry(() => fetch(`${BACKEND_URL}/api/extension/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id }),
+    }));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Registration failed (${res.status})`);
+    }
+    const { token } = await res.json();
+    await chrome.storage.local.set({ annotate_jwt: token });
+    return { jwt: token, device_id };
   }
 
   async function getModel() {
@@ -561,9 +562,15 @@
     inp.value = '';
     inp.style.height = 'auto';
 
-    const session = await getSession();
+    let session;
+    try {
+      session = await getSession();
+    } catch (err) {
+      addMsg(thread, 'assistant', `⚠️ ${err.message}`);
+      return;
+    }
     if (!session) {
-      addMsg(thread, 'assistant', '⚠️ Could not reach Nabu servers. The server may be starting up — please try again in a moment.');
+      addMsg(thread, 'assistant', '⚠️ Could not connect to Nabu servers. Please try again.');
       return;
     }
 
