@@ -254,17 +254,22 @@ async def annotate(
 async def create_checkout(user: ExtensionUser = Depends(get_extension_user)):
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Stripe not configured")
+    if not STRIPE_PRICE_ID:
+        raise HTTPException(status_code=500, detail="Stripe price not configured")
     stripe.api_key = STRIPE_SECRET_KEY
-    session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
-        line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
-        mode="subscription",
-        success_url=f"{BACKEND_URL}/api/extension/checkout-success",
-        cancel_url=f"{BACKEND_URL}/api/extension/checkout-cancel",
-        metadata={"device_id": user.id},
-        customer_creation="always",
-    )
-    return {"url": session.url}
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+            mode="subscription",
+            success_url=f"{BACKEND_URL}/api/extension/checkout-success",
+            cancel_url=f"{BACKEND_URL}/api/extension/checkout-cancel",
+            metadata={"device_id": user.id},
+            customer_creation="always",
+        )
+        return {"url": session.url}
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=500, detail=str(e.user_message or e))
 
 
 @router.get("/checkout-success", response_class=HTMLResponse)
