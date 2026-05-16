@@ -18,6 +18,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 document.addEventListener('DOMContentLoaded', async () => {
   renderHistory();
+  loadUsage(); // pre-load so Account tab is ready when user clicks
 
   const { model = 'gpt-4.1-mini' } = await chrome.storage.sync.get('model');
   document.getElementById('model').value = model;
@@ -49,6 +50,7 @@ async function loadUsage() {
   const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
   if (!annotate_jwt) {
     document.getElementById('usage-text').textContent = 'Not connected yet — open a page and ask a question.';
+    document.getElementById('btn-upgrade').hidden = true;
     return;
   }
   try {
@@ -87,9 +89,10 @@ async function loadUsage() {
 
 async function upgrade() {
   const btn = document.getElementById('btn-upgrade');
+  const usageText = document.getElementById('usage-text');
   const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
   if (!annotate_jwt) {
-    alert('Please open a page and ask a question first to activate your account.');
+    if (usageText) usageText.textContent = 'Open any page and ask a question first to activate.';
     return;
   }
   btn.textContent = 'Opening checkout…';
@@ -106,7 +109,10 @@ async function upgrade() {
     const { url } = await res.json();
     chrome.tabs.create({ url });
   } catch (err) {
-    alert(`Upgrade failed: ${err.message}`);
+    if (usageText) {
+      usageText.textContent = `Upgrade failed: ${err.message}`;
+      usageText.style.color = '#f28b82';
+    }
   } finally {
     btn.textContent = '⚡ Upgrade — $0.99/mo';
     btn.disabled = false;

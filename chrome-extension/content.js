@@ -284,7 +284,7 @@
     _floatingBtn.addEventListener('mousedown', e => e.preventDefault()); // prevent focus steal
     _floatingBtn.addEventListener('click', e => {
       e.stopPropagation();
-      if (_floatingTarget) openThread(_floatingTarget, _floatingTarget.textContent.trim(), getPageContext(_floatingTarget));
+      if (_floatingTarget?.isConnected) openThread(_floatingTarget, _floatingTarget.textContent.trim(), getPageContext(_floatingTarget));
       _hideFloatingBtn();
     });
     document.body.appendChild(_floatingBtn);
@@ -335,7 +335,7 @@
     } catch (_) {}
 
     if (!surroundingText) surroundingText = p.textContent.trim();
-    return { surroundingText, userPrompt: '' };
+    return { surroundingText };
   }
 
   // ── Selection popover ──────────────────────────────────────────────────────
@@ -637,10 +637,9 @@
   }
 
   function buildApiMessages(thread) {
-    const { anchor, pageContext: { surroundingText = '', userPrompt = '' } } = thread;
+    const { anchor, pageContext: { surroundingText = '' } } = thread;
 
     let contextBlock = '';
-    if (userPrompt) contextBlock += `User's question to Gemini:\n${userPrompt}\n\n`;
     if (surroundingText) contextBlock += `Surrounding context:\n${surroundingText}\n\n`;
     contextBlock += `Specific passage the user is asking about:\n"${anchor}"`;
 
@@ -682,8 +681,9 @@
     // Display math: $$...$$ and \[...\]
     text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => ph(renderMath(m, true)));
     text = text.replace(/\\\[([\s\S]+?)\\\]/g,  (_, m) => ph(renderMath(m, true)));
-    // Inline math: $...$ and \(...\)
-    text = text.replace(/\$([^$\n]+?)\$/g,       (_, m) => ph(renderMath(m, false)));
+    // Inline math: $...$ and \(...\) — require non-digit immediately after opening $
+    // and non-digit immediately before closing $ to avoid matching prices like "$5 and $10"
+    text = text.replace(/\$(?=\S)([^$\n]*?[^\d\s$])\$(?!\d)/g, (_, m) => ph(renderMath(m, false)));
     text = text.replace(/\\\((.+?)\\\)/g,         (_, m) => ph(renderMath(m, false)));
 
     let html = text

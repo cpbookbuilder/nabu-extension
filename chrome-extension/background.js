@@ -11,15 +11,6 @@ chrome.runtime.onInstalled.addListener(() => {
 // Runs as a service worker so it stays alive after the popup closes.
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  // Fetch KaTeX from CDN — content scripts can't do this due to page CSP
-  if (msg.type === 'fetchKaTeX') {
-    fetch('https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js')
-      .then(r => r.text())
-      .then(text => sendResponse(text))
-      .catch(() => sendResponse(null));
-    return true; // keep channel open for async response
-  }
-
   if (msg.type !== 'openAndScroll') return;
   const { url, threadId } = msg;
 

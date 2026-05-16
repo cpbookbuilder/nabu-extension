@@ -314,7 +314,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     if etype == "checkout.session.completed":
         device_id = obj.get("metadata", {}).get("device_id")
-        email     = obj.get("customer_details", {}).get("email", "")
+        email     = obj.get("customer_details", {}).get("email") or obj.get("customer_email", "") or ""
         if device_id and UUID_RE.match(str(device_id)):
             result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == device_id))
             user = result.scalar_one_or_none()
@@ -391,21 +391,45 @@ async def restore(req: RestoreRequest, request: Request, db: AsyncSession = Depe
     result = await db.execute(
         select(ExtensionUser).where(ExtensionUser.email == req.email)
     )
-    user = result.scalar_one_or_none()
+    source_user = result.scalar_one_or_none()
 
     # Always return the same response to prevent email enumeration
-    if not user or not user.subscribed:
+    if not source_user or not source_user.subscribed:
         return {"message": _RESTORE_GENERIC, "restored": False}
 
-    new_user = ExtensionUser(
-        id=req.device_id,
-        email=user.email,
-        subscribed=True,
-        stripe_customer_id=user.stripe_customer_id,
+    # If the new device is the same as the source, just return a fresh token
+    if source_user.id == req.device_id:
+        return {
+            "message": _RESTORE_GENERIC,
+            "restored": True,
+            "token": make_token(req.device_id),
+        }
+
+    # Check if target device already exists — if so, transfer subscription to it
+    target_result = await db.execute(
+        select(ExtensionUser).where(ExtensionUser.id == req.device_id)
     )
-    await db.delete(user)
-    await db.flush()
-    db.add(new_user)
+    target_user = target_result.scalar_one_or_none()
+
+    if target_user:
+        target_user.subscribed = True
+        target_user.email = source_user.email
+        target_user.stripe_customer_id = source_user.stripe_customer_id
+    else:
+        target_user = ExtensionUser(
+            id=req.device_id,
+            email=source_user.email,
+            subscribed=True,
+            stripe_customer_id=source_user.stripe_customer_id,
+        )
+        db.add(target_user)
+
+    # Detach subscription from the source device (don't delete — preserves usage history,
+    # avoids FK violations on DailyUsage rows)
+    source_user.subscribed = False
+    source_user.email = ""
+    source_user.stripe_customer_id = None
+
     await db.commit()
     return {
         "message": _RESTORE_GENERIC,
