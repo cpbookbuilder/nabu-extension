@@ -35,6 +35,7 @@ async function loadUsage() {
   if (!annotate_jwt) {
     document.getElementById('usage-text').textContent = 'Not connected yet — open a page and ask a question.';
     document.getElementById('btn-upgrade').hidden = true;
+    document.getElementById('upgrade-fineprint').hidden = true;
     document.getElementById('btn-manage').hidden = true;
     return;
   }
@@ -51,6 +52,7 @@ async function loadUsage() {
       badge.className = 'status-badge badge-pro';
       document.getElementById('usage-section').innerHTML = '<div class="usage-text" style="color:#81c995">Unlimited access</div>';
       document.getElementById('btn-upgrade').hidden = true;
+      document.getElementById('upgrade-fineprint').hidden = true;
       document.getElementById('btn-manage').hidden = false;
     } else {
       const pct = Math.min(100, (count / limit) * 100);
@@ -67,6 +69,7 @@ async function loadUsage() {
       document.getElementById('usage-text').textContent = usageText;
       document.getElementById('btn-upgrade').hidden = false;
       document.getElementById('btn-upgrade').textContent = '⚡ Upgrade — $4.99/mo';
+      document.getElementById('upgrade-fineprint').hidden = false;
       document.getElementById('btn-manage').hidden = true;
     }
   } catch (_) {}

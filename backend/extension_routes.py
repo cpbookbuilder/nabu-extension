@@ -286,28 +286,121 @@ async def manage_subscription(user: ExtensionUser = Depends(get_extension_user))
         raise HTTPException(status_code=500, detail=str(e.user_message or e))
 
 
+def _branded_page(*, icon: str, icon_color: str, title: str, body: str, auto_close: bool) -> str:
+    """Render a Nabu-branded full-page response shown after Stripe redirects.
+
+    auto_close: try window.close() after 3s with countdown; show manual fallback if blocked.
+    """
+    countdown_html = """
+      <p id="cd" style="margin-top:20px;font-size:13px;color:#64748b;">
+        This tab will close in <span id="cd-n">3</span>…
+      </p>
+      <script>
+        let n = 3;
+        const cdEl = document.getElementById('cd-n');
+        const cdP  = document.getElementById('cd');
+        const tick = setInterval(() => {
+          n -= 1;
+          if (n > 0) { cdEl.textContent = n; return; }
+          clearInterval(tick);
+          window.close();
+          // If Chrome blocks close (e.g. tab not opened by script), show fallback.
+          setTimeout(() => { cdP.textContent = 'You can close this tab now.'; }, 300);
+        }, 1000);
+      </script>
+    """ if auto_close else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nabu</title>
+  <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117; color: #e2e8f0;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }}
+    .card {{
+      max-width: 420px; text-align: center; padding: 40px 32px;
+      background: #141720; border: 1px solid #1e2330; border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    }}
+    .icon {{
+      width: 64px; height: 64px; border-radius: 50%;
+      background: {icon_color}; color: #0f1117;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px; font-weight: 800;
+      margin: 0 auto 20px;
+      animation: pop .35s cubic-bezier(.2,.9,.3,1.4) both;
+    }}
+    @keyframes pop {{
+      0% {{ transform: scale(0); opacity: 0; }}
+      100% {{ transform: scale(1); opacity: 1; }}
+    }}
+    h1 {{ font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 12px; }}
+    p {{ font-size: 14px; color: #94a3b8; line-height: 1.6; }}
+    .brand {{ margin-top: 28px; font-size: 11px; color: #475569; letter-spacing: .12em; text-transform: uppercase; }}
+    .brand span {{ color: #f6c344; font-weight: 700; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">{icon}</div>
+    <h1>{title}</h1>
+    <p>{body}</p>
+    {countdown_html}
+    <div class="brand">· <span>Nabu</span> ·</div>
+  </div>
+</body>
+</html>"""
+
+
 @router.get("/portal-return", response_class=HTMLResponse)
 async def portal_return():
-    return """<html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#f9fafb">
-    <h2 style="color:#111827">Done.</h2>
-    <p style="color:#6b7280">Close this tab and re-open Nabu to see the updated status.</p>
-    </body></html>"""
+    return _branded_page(
+        icon="✓",
+        icon_color="#f6c344",
+        title="Subscription updated",
+        body="Re-open Nabu from your browser toolbar to see the latest plan status.",
+        auto_close=True,
+    )
 
 
 @router.get("/checkout-success", response_class=HTMLResponse)
 async def checkout_success():
-    return """<html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#f9fafb">
-    <h2 style="color:#111827">✓ You're upgraded!</h2>
-    <p style="color:#6b7280">Close this tab and re-open Nabu — you now have unlimited access.</p>
-    </body></html>"""
+    return _branded_page(
+        icon="✓",
+        icon_color="#81c995",
+        title="You're now Pro",
+        body=(
+            "Unlimited questions are live. Open Nabu from your browser toolbar to start."
+            "<br><br>"
+            "<span style='color:#cbd5e1;font-size:13px;font-weight:600;'>How to cancel anytime:</span>"
+            "<ol style='text-align:left;color:#94a3b8;font-size:13px;margin:8px auto 0;max-width:280px;padding-left:20px;line-height:1.7;'>"
+            "<li>Click the <strong>Nabu</strong> icon in your browser toolbar.</li>"
+            "<li>Tap <strong>Manage subscription</strong> in the popup.</li>"
+            "<li>Click <strong>Cancel plan</strong> in the portal that opens.</li>"
+            "</ol>"
+            "<span style='display:block;margin-top:14px;color:#64748b;font-size:12px;'>"
+            "No cancellation fees. Access continues until the end of the billing period."
+            "</span>"
+        ),
+        auto_close=False,
+    )
 
 
 @router.get("/checkout-cancel", response_class=HTMLResponse)
 async def checkout_cancel():
-    return """<html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#f9fafb">
-    <h2 style="color:#111827">Upgrade cancelled</h2>
-    <p style="color:#6b7280">No charge was made. Close this tab and go back to Nabu.</p>
-    </body></html>"""
+    return _branded_page(
+        icon="×",
+        icon_color="#3c4043",
+        title="Upgrade cancelled",
+        body="No charge was made. You're still on the Free plan.",
+        auto_close=True,
+    )
 
 
 # ── Stripe webhook ─────────────────────────────────────────────────────────
