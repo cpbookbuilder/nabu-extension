@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from admin_routes import router as admin_router
 from extension_routes import router as ext_router, purge_old_data
 from pages_routes import router as pages_router
 from db import AsyncSessionLocal, create_tables
@@ -55,4 +56,5 @@ app.add_middleware(
 
 app.include_router(pages_router)
 app.include_router(ext_router)
+app.include_router(admin_router)
 app.mount("/static", StaticFiles(directory="static"), name="static")
