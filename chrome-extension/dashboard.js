@@ -1,5 +1,174 @@
+const BACKEND_URL = 'https://nabu-extension-production.up.railway.app';
+
 let currentTab = 'threads';
 let allData = [];
+
+// ── Account section ────────────────────────────────────────────────────────
+
+async function loadAccount() {
+  const summary = document.getElementById('usage-summary');
+  const badge   = document.getElementById('plan-badge');
+  const barWrap = document.getElementById('usage-bar-wrap');
+  const fill    = document.getElementById('usage-fill');
+  const upgrade = document.getElementById('btn-upgrade');
+  const fine    = document.getElementById('upgrade-fineprint');
+  const manage  = document.getElementById('btn-manage');
+
+  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
+  if (!annotate_jwt) {
+    summary.textContent = 'Not connected yet — open a page and ask a question.';
+    barWrap.style.display = 'none';
+    upgrade.hidden = true; fine.hidden = true; manage.hidden = true;
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/extension/usage`, {
+      headers: { Authorization: `Bearer ${annotate_jwt}` },
+    });
+    if (!res.ok) return;
+    const { count, limit, subscribed, remaining } = await res.json();
+
+    if (subscribed) {
+      badge.textContent = 'Pro ✓';
+      badge.className = 'plan-badge badge-pro';
+      summary.textContent = 'Unlimited access';
+      summary.className = 'pro-text';
+      barWrap.style.display = 'none';
+      upgrade.hidden = true; fine.hidden = true;
+      manage.hidden = false;
+    } else {
+      badge.textContent = 'Free';
+      badge.className = 'plan-badge badge-free';
+      summary.className = 'usage-text';
+      const pct = Math.min(100, (count / limit) * 100);
+      fill.style.width = `${pct}%`;
+      fill.classList.toggle('warn', remaining === 0);
+      barWrap.style.display = 'block';
+      if (remaining === 0) {
+        const now = new Date();
+        const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+        const hoursLeft = Math.ceil((midnight - now) / 3600000);
+        summary.textContent = hoursLeft <= 1 ? 'Daily limit reached — resets in <1h' : `Daily limit reached — resets in ${hoursLeft}h`;
+      } else {
+        summary.textContent = `${count} of ${limit} free questions used today`;
+      }
+      upgrade.hidden = false; fine.hidden = false;
+      manage.hidden = true;
+    }
+  } catch (_) {}
+}
+
+async function upgrade() {
+  const btn = document.getElementById('btn-upgrade');
+  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
+  if (!annotate_jwt) return;
+  btn.textContent = 'Opening checkout…'; btn.disabled = true;
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/extension/create-checkout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${annotate_jwt}` },
+    });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `Server error ${res.status}`); }
+    const { url } = await res.json();
+    chrome.tabs.create({ url });
+  } catch (err) {
+    btn.textContent = `Failed: ${err.message}`;
+    setTimeout(() => { btn.textContent = '⚡ Upgrade — $4.99/mo'; btn.disabled = false; }, 3000);
+    return;
+  }
+  btn.textContent = '⚡ Upgrade — $4.99/mo'; btn.disabled = false;
+}
+
+async function manageSubscription() {
+  const btn = document.getElementById('btn-manage');
+  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
+  if (!annotate_jwt) return;
+  btn.textContent = 'Opening…'; btn.disabled = true;
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/extension/manage-subscription`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${annotate_jwt}` },
+    });
+    if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `Server error ${res.status}`); }
+    const { url } = await res.json();
+    chrome.tabs.create({ url });
+  } catch (err) {
+    btn.textContent = `Couldn't open: ${err.message}`;
+    setTimeout(() => { btn.textContent = 'Manage subscription'; btn.disabled = false; }, 3000);
+    return;
+  }
+  btn.textContent = 'Manage subscription'; btn.disabled = false;
+}
+
+async function restore() {
+  const email = document.getElementById('restore-email').value.trim();
+  const msg = document.getElementById('restore-msg');
+  if (!email) return;
+  const { device_id } = await chrome.storage.local.get('device_id');
+  if (!device_id) { msg.textContent = 'Could not read device ID.'; msg.style.color = '#f28b82'; return; }
+  msg.textContent = 'Checking…'; msg.style.color = '#9aa0a6';
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/extension/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, device_id }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.restored) {
+      msg.textContent = 'If a subscription exists for this email, it has been restored.';
+      msg.style.color = '#9aa0a6';
+      return;
+    }
+    await chrome.storage.local.set({ annotate_jwt: data.token });
+    msg.textContent = '✓ Subscription restored!';
+    msg.style.color = '#81c995';
+    loadAccount();
+  } catch (_) {
+    msg.textContent = 'Something went wrong. Try again.';
+    msg.style.color = '#f28b82';
+  }
+}
+
+async function deleteAccount() {
+  const msg = document.getElementById('delete-msg');
+  const btn = document.getElementById('btn-delete');
+  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
+  if (!annotate_jwt) { await clearAllLocalData(); msg.textContent = '✓ Local data cleared.'; msg.style.color = '#81c995'; return; }
+  btn.disabled = true; btn.textContent = 'Deleting…';
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/extension/account`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${annotate_jwt}` },
+    });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const data = await res.json().catch(() => ({}));
+    await clearAllLocalData();
+    if (data.stripe_cancelled === false) {
+      msg.innerHTML = '⚠ Data deleted, but we could not cancel your Pro subscription. Email <a href="mailto:nabu.extension@gmail.com" style="color:#f6c344;">nabu.extension@gmail.com</a> to confirm cancellation.';
+      msg.style.color = '#fdd663';
+    } else {
+      const tail = data.stripe_cancelled === true ? ' Your Pro subscription was cancelled.' : '';
+      msg.textContent = `✓ All data deleted.${tail}`;
+      msg.style.color = '#81c995';
+    }
+    loadAccount();
+    load();
+  } catch (err) {
+    msg.textContent = `Delete failed: ${err.message}`;
+    msg.style.color = '#f28b82';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Confirm delete';
+  }
+}
+
+async function clearAllLocalData() {
+  const all = await chrome.storage.local.get(null);
+  const keysToRemove = Object.keys(all).filter(k =>
+    k.startsWith('threads:') || ['history', 'todos', 'reminders', 'annotate_jwt', 'device_id'].includes(k)
+  );
+  if (keysToRemove.length) await chrome.storage.local.remove(keysToRemove);
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -212,4 +381,19 @@ function escapeAttr(s) {
   return String(s).replace(/"/g, '&quot;');
 }
 
+// ── Account UI wiring ──────────────────────────────────────────────────────
+
+document.getElementById('btn-upgrade').addEventListener('click', upgrade);
+document.getElementById('btn-manage').addEventListener('click', manageSubscription);
+document.getElementById('btn-restore').addEventListener('click', restore);
+document.getElementById('btn-delete').addEventListener('click', deleteAccount);
+
+document.getElementById('restore-toggle').addEventListener('click', () => {
+  document.getElementById('restore-form').classList.toggle('open');
+});
+document.getElementById('delete-toggle').addEventListener('click', () => {
+  document.getElementById('delete-form').classList.toggle('open');
+});
+
+loadAccount();
 load();

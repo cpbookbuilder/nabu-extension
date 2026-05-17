@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-delete').addEventListener('click', deleteAccount);
 
   document.getElementById('see-all').addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
   });
 });
 

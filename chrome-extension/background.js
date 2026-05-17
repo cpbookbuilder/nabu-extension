@@ -11,6 +11,10 @@ chrome.runtime.onInstalled.addListener(() => {
 // Runs as a service worker so it stays alive after the popup closes.
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'openDashboard') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+    return;
+  }
   if (msg.type !== 'openAndScroll') return;
   const { url, threadId } = msg;
 
