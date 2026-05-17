@@ -7,13 +7,9 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { width: 300px; font-family: 'Google Sans', Roboto, sans-serif; background: #202124; color: #e3e3e3; }
 
-    .tabs { display: flex; border-bottom: 1px solid #3c4043; }
-    .tab { flex: 1; padding: 11px 0; background: none; border: none; color: #9aa0a6; font-size: 13px; font-family: inherit; cursor: pointer; border-bottom: 2px solid transparent; }
-    .tab.active { color: #8ab4f8; border-bottom-color: #8ab4f8; }
-    .tab:hover:not(.active) { color: #e3e3e3; }
-
-    .panel { padding: 16px; }
-    .panel[hidden] { display: none; }
+    .section { padding: 14px 16px; }
+    .section + .section { border-top: 1px solid #3c4043; }
+    .section-title { font-size: 11px; color: #9aa0a6; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
 
     /* Account */
     .status-box { background: #303134; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
@@ -42,22 +38,16 @@
     .restore-form input:focus { border-color: #8ab4f8; }
     .restore-msg { font-size: 11px; text-align: center; margin-top: 6px; min-height: 16px; }
 
-    label { font-size: 11px; color: #9aa0a6; display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
-    select { width: 100%; background: #303134; border: 1px solid #3c4043; border-radius: 8px; padding: 8px 10px; color: #e3e3e3; font-size: 13px; font-family: inherit; margin-bottom: 12px; outline: none; }
-    select:focus { border-color: #8ab4f8; }
-    select option { background: #303134; }
-    .saved { color: #81c995; font-size: 12px; text-align: center; margin-top: 8px; display: none; }
-
     /* History */
-    #history-list { display: flex; flex-direction: column; gap: 1px; }
+    #history-list { display: flex; flex-direction: column; gap: 4px; }
     .h-entry { padding: 10px 12px; background: #2d2e2f; border-radius: 6px; cursor: pointer; }
     .h-entry:hover { background: #3c4043; }
     .h-anchor { font-size: 12px; color: #fdd663; font-style: italic; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .h-question { font-size: 13px; color: #e3e3e3; margin-bottom: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .h-meta { display: flex; justify-content: space-between; font-size: 11px; color: #5f6368; }
     .h-url { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
-    .empty { text-align: center; color: #5f6368; font-size: 13px; padding: 24px 0; }
-    .history-footer { margin-top: 12px; }
+    .empty { text-align: center; color: #5f6368; font-size: 13px; padding: 16px 0; }
+    .history-footer { margin-top: 10px; }
 
     .footer { padding: 10px 16px; border-top: 1px solid #3c4043; text-align: center; }
     .footer a { font-size: 11px; color: #5f6368; text-decoration: none; }
@@ -68,13 +58,10 @@
     <img src="icons/icon32.png" width="20" height="20" style="border-radius:4px;">
     <span style="font-weight:700;font-size:14px;color:#f6c344;letter-spacing:.01em;">Nabu</span>
   </div>
-  <div class="tabs">
-    <button class="tab" data-tab="account">Account</button>
-    <button class="tab active" data-tab="history">History</button>
-  </div>
 
-  <!-- Account panel -->
-  <div id="panel-account" class="panel" hidden>
+  <!-- Account -->
+  <div class="section">
+    <div class="section-title">Account</div>
     <div class="status-box">
       <div class="status-row">
         <span class="status-label">Plan</span>
@@ -87,26 +74,10 @@
     </div>
 
     <button class="btn btn-primary" id="btn-upgrade">⚡ Upgrade — $0.99/mo</button>
-
-    <div style="margin-top: 12px;">
-      <label>Model</label>
-      <select id="model">
-        <optgroup label="GPT-4.1">
-          <option value="gpt-4.1-mini">gpt-4.1-mini (recommended)</option>
-          <option value="gpt-4.1">gpt-4.1</option>
-          <option value="gpt-4.1-nano">gpt-4.1-nano (fastest)</option>
-        </optgroup>
-        <optgroup label="GPT-4o">
-          <option value="gpt-4o-mini">gpt-4o-mini</option>
-          <option value="gpt-4o">gpt-4o</option>
-        </optgroup>
-      </select>
-      <button class="btn btn-primary" id="btn-save-model">Save</button>
-      <p class="saved" id="saved">✓ Saved</p>
-    </div>
+    <button class="btn btn-secondary" id="btn-manage" hidden>Manage subscription</button>
 
     <div style="margin-top:10px; padding:10px; background:#1a1f2e; border-radius:8px; font-size:11px; color:#5f6368; line-height:1.5;">
-      🔒 Your questions are sent to OpenAI to generate responses. We never store your content. <a href="https://nabu-extension-production.up.railway.app/privacy" target="_blank" style="color:#8ab4f8;">Privacy policy</a>
+      🔒 Questions are proxied through Nabu's backend to OpenAI. Content is processed in transit only — never logged or persisted on our servers. <a href="https://nabu-extension-production.up.railway.app/privacy" target="_blank" style="color:#8ab4f8;">Privacy policy</a>
     </div>
 
     <span class="restore-link" id="restore-toggle">Restore purchase</span>
@@ -115,10 +86,20 @@
       <button class="btn btn-primary" id="btn-restore">Restore</button>
       <div class="restore-msg" id="restore-msg"></div>
     </div>
+
+    <span class="restore-link" id="delete-toggle" style="color:#7a3a3a;">Delete my data</span>
+    <div class="restore-form" id="delete-form">
+      <p style="font-size:11px;color:#9aa0a6;line-height:1.5;margin-bottom:8px;">
+        This permanently deletes your device record, usage history, and email from our servers. Local threads are also cleared. Active Pro subscriptions are cancelled. This cannot be undone.
+      </p>
+      <button class="btn btn-primary" id="btn-delete" style="background:#a13b3b;color:#fff;">Confirm delete</button>
+      <div class="restore-msg" id="delete-msg"></div>
+    </div>
   </div>
 
-  <!-- History panel -->
-  <div id="panel-history" class="panel">
+  <!-- History -->
+  <div class="section">
+    <div class="section-title">Recent threads</div>
     <div id="history-list"></div>
     <div class="history-footer">
       <button class="btn btn-secondary" id="see-all">See all questions ↗</button>

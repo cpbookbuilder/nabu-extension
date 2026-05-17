@@ -36,7 +36,9 @@
 
 ## 🔒 Privacy & compliance
 
-- [ ] Wire up `purge_old_data()` — call weekly on a schedule (Railway cron or background task in `main.py` lifespan)
+- [x] Wire up `purge_old_data()` — runs daily from `main.py` lifespan (`_purge_loop`)
+- [x] Self-serve "Delete my data" button in the popup
+- [x] Cancel Stripe subscription as part of account deletion
 - [ ] If targeting EU users: add cookie/consent banner to landing page
 - [ ] If targeting EU users: sign Data Processing Agreements with OpenAI and Stripe
 
@@ -45,8 +47,8 @@
 ## 🛠 Technical debt
 
 - [ ] `_rate_buckets` is in-memory — resets on server restart. Replace with Redis or DB-backed rate limiting for production scale
-- [ ] Add a `DELETE /api/extension/account` call in the extension popup (settings panel) so users can self-serve data deletion
 - [ ] Consider encrypting email at rest in the DB (currently plain text)
+- [ ] Build-time `BACKEND_URL` substitution so dev/prod don't drift (currently hand-edited)
 - [ ] Screenshots in Chrome Web Store must be exactly 1280×800 — verify current ones display well before submitting
 
 ---

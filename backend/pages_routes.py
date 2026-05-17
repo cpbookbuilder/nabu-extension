@@ -187,7 +187,7 @@ async def landing():
       </div>
       <div class="screenshot-item">
         <img src="/static/screenshots/screenshot-2.png" alt="Nabu quick action popover on text selection">
-        <div class="screenshot-caption">Quick actions — Ask, What does this mean?, Explain more, Todo, Remind</div>
+        <div class="screenshot-caption">Quick actions — Ask, What does this mean?, Explain more, Todo, Save</div>
       </div>
     </div>
   </div>
@@ -210,8 +210,8 @@ async def landing():
     </div>
     <div class="feature">
       <div class="feature-icon">📋</div>
-      <h3>Todos & reminders</h3>
-      <p>Save any selection as a todo or reminder. All organized in your history panel.</p>
+      <h3>Todos & saved items</h3>
+      <p>Save any selection as a todo or for later reading. All organized in your history panel.</p>
     </div>
     <div class="feature">
       <div class="feature-icon">🔒</div>
@@ -305,18 +305,18 @@ async def privacy():
       <li><strong>Email address</strong> — collected only if you upgrade to Pro (via Stripe checkout). Used solely to restore your subscription if you reinstall the extension. Never used for marketing.</li>
     </ul>
 
-    <h2>What data we do NOT collect</h2>
+    <h2>What data we do NOT store</h2>
     <ul>
-      <li>The text you select or highlight on webpages</li>
-      <li>The questions you ask or the AI responses you receive</li>
-      <li>The URLs or pages you visit</li>
+      <li>The text you select or highlight on webpages — not written to any database</li>
+      <li>The questions you ask or AI responses you receive — not written to any database</li>
+      <li>The URLs or pages you visit — not written to any database</li>
       <li>Your browsing history</li>
       <li>Any personally identifiable information beyond email (Pro users only)</li>
     </ul>
 
     <h2>How your data flows</h2>
-    <p>When you ask a question, your selected text and question are sent directly to <strong>OpenAI's API</strong> to generate a response. This is the only time your content leaves your browser. Nabu's servers never see the content of your questions or answers.</p>
-    <p>Your threads, history, and saved annotations are stored <strong>locally in your browser</strong> using Chrome's storage API and are never transmitted to our servers.</p>
+    <p>When you ask a question, your selected text and question are sent from the extension to <strong>Nabu's backend</strong>, which forwards them to <strong>OpenAI's API</strong> and streams the response back. The backend processes this content in transit only — it is <strong>not logged, not persisted, and not retained</strong> on our servers.</p>
+    <p>Your threads, history, todos, and saved annotations are stored <strong>locally in your browser</strong> using Chrome's storage API and are never transmitted to our servers.</p>
 
     <h2>Third-party services</h2>
     <ul>

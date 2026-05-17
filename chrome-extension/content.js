@@ -205,13 +205,6 @@
     return { jwt: token, device_id };
   }
 
-  async function getModel() {
-    try {
-      const { model = 'gpt-4.1-mini' } = await chrome.storage.sync.get('model');
-      return model;
-    } catch (_) { return 'gpt-4.1-mini'; }
-  }
-
   function isOurShadowDOM(el) {
     const root = el.getRootNode();
     return root !== document && root.host?.classList?.contains('annotate-card');
@@ -225,12 +218,27 @@
     document.addEventListener('mouseup', onMouseUp, { capture: true });
     document.addEventListener('scroll', () => requestAnimationFrame(repositionAll), { passive: true, capture: true });
     window.addEventListener('resize', () => requestAnimationFrame(repositionAll), { passive: true });
-    // Handle SPA navigation (Gemini changes URL without full reload)
-    window.addEventListener('popstate', () => {
+    // Handle SPA navigation. popstate covers back/forward; pushState/replaceState
+    // are patched to fire a synthetic 'nabu:locationchange' so client-side routes
+    // (Gemini, Notion, GitHub, etc.) also reload threads.
+    let _lastUrl = location.href;
+    function _onLocationChange() {
+      if (location.href === _lastUrl) return;
+      _lastUrl = location.href;
       for (const id of [...threads.keys()]) closeThread(id);
       _pendingRecords = [];
       setTimeout(restoreThreads, 600);
-    });
+    }
+    window.addEventListener('popstate', _onLocationChange);
+    window.addEventListener('nabu:locationchange', _onLocationChange);
+    for (const fn of ['pushState', 'replaceState']) {
+      const original = history[fn];
+      history[fn] = function () {
+        const ret = original.apply(this, arguments);
+        window.dispatchEvent(new Event('nabu:locationchange'));
+        return ret;
+      };
+    }
     restoreThreads();
 
     chrome.runtime.onMessage.addListener((msg) => {
@@ -375,7 +383,7 @@
       <button id="annotate-mean">What does this mean?</button>
       <button id="annotate-explain">Explain more</button>
       <button id="annotate-todo">+ Todo</button>
-      <button id="annotate-remind">🔔 Remind</button>
+      <button id="annotate-remind">🔖 Save</button>
     `;
     document.body.appendChild(div);
 
@@ -582,8 +590,7 @@
     thread.abortCtrl = new AbortController();
 
     try {
-      const model = await getModel();
-      const text = await streamFromBackend(buildApiMessages(thread), msgEl, thread, session.jwt, model);
+      const text = await streamFromBackend(buildApiMessages(thread), msgEl, thread, session.jwt);
       await ensureKaTeX();
       injectKaTeXCSS(root);
       msgEl.classList.remove('streaming');
@@ -712,14 +719,14 @@
     return html;
   }
 
-  async function streamFromBackend(messages, el, thread, jwt, model) {
+  async function streamFromBackend(messages, el, thread, jwt) {
     let attempt = 0;
     const res = await withRetry(async () => {
       if (attempt++ > 0) el.textContent = `Connecting… (attempt ${attempt})`;
       return fetch(`${BACKEND_URL}/api/extension/annotate`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages, model }),
+        body: JSON.stringify({ messages }),
         signal: thread.abortCtrl.signal,
       });
     });
@@ -1037,14 +1044,14 @@
         :host(.collapsed) #badge { display: block; }
       </style>
       <div id="header">
-        <div id="bar"></div>
-        <div id="snippet">${escapeHtml(snippet)}</div>
-        <span id="badge">0</span>
         <button id="collapse" title="Collapse">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="6 9 12 15 18 9"/>
           </svg>
         </button>
+        <div id="bar"></div>
+        <div id="snippet">${escapeHtml(snippet)}</div>
+        <span id="badge">0</span>
         <button id="close">×</button>
       </div>
       <div id="msgs"></div>

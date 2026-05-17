@@ -8,14 +8,14 @@ Nabu is a Chrome extension that lets you anchor AI conversation threads to any t
 
 ## Features
 
-- **Inline threads** — select any text, thread card anchors to that exact spot
+- **Inline threads** — select any text and a thread card anchors near that selection
 - **Persists per URL** — come back to the same page, your threads are still there
 - **Multiple threads per page** — annotate as many passages as you want simultaneously
 - **Quick actions** — "What does this mean?" and "Explain more" fire with one click
-- **Todos & reminders** — save any selection directly from the popover
+- **Todos & saved-for-later** — save any selection directly from the popover
 - **LaTeX rendering** — equations render correctly via KaTeX
-- **Works everywhere** — articles, research papers, docs, LLM outputs, any page
-- **Private by design** — conversation content never stored on our servers
+- **Works on most pages** — articles, research papers, docs, LLM outputs (some sites with strict CSPs may not work)
+- **Private by design** — conversation content is proxied through our backend to OpenAI but is never logged or persisted
 
 ---
 
@@ -107,9 +107,9 @@ See **[PRODUCTION.md](./PRODUCTION.md)** for the full deployment checklist and *
 
 ## Privacy
 
-- Selected text and questions go from the extension directly to OpenAI — we never see or store them
-- Only stored: device UUID, daily question count, email (Pro subscribers only)
-- Right to erasure: `DELETE /api/extension/account`
+- Selected text and questions are sent from the extension to Nabu's backend, which proxies them to OpenAI and streams the response back. The backend processes them in transit only — nothing is logged or written to the database.
+- Only persisted server-side: device UUID, daily question count, email (Pro subscribers only)
+- Right to erasure: in-popup "Delete my data" button or `DELETE /api/extension/account`. The backend also cancels any active Stripe subscription on delete.
 - Full policy: `/privacy` on the backend URL
 
 ---

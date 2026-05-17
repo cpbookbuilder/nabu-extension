@@ -30,12 +30,14 @@ BACKEND_URL           = os.environ.get("BACKEND_URL", "https://nabu-extension-pr
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 if not JWT_SECRET:
-    import warnings
-    warnings.warn("JWT_SECRET is not set — using insecure default. Set it in Railway env vars.")
-    JWT_SECRET = "default-insecure-secret-change-me"
+    raise RuntimeError(
+        "JWT_SECRET is not set. Generate one with `openssl rand -hex 32` and "
+        "set it as an env var before starting the backend."
+    )
 
-# Allowed OpenAI models — prevents cost abuse via model injection
-ALLOWED_MODELS = {"gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano", "gpt-4o-mini", "gpt-4o"}
+# Single server-side model. Hardcoded so the extension cannot influence cost
+# by sending a more expensive model in the request.
+OPENAI_MODEL = "gpt-5-nano"
 
 # Max content length per message (chars) — prevents payload abuse
 MAX_MESSAGE_LENGTH = 8_000
@@ -174,14 +176,6 @@ class Message(BaseModel):
 
 class AnnotateRequest(BaseModel):
     messages: list[Message]
-    model: str = "gpt-4.1-mini"
-
-    @field_validator("model")
-    @classmethod
-    def validate_model(cls, v: str) -> str:
-        if v not in ALLOWED_MODELS:
-            return "gpt-4.1-mini"  # silently fall back rather than erroring
-        return v
 
     @field_validator("messages")
     @classmethod
@@ -189,6 +183,8 @@ class AnnotateRequest(BaseModel):
         if len(v) > MAX_MESSAGES:
             raise ValueError(f"too many messages (max {MAX_MESSAGES})")
         return v
+
+    model_config = {"extra": "ignore"}  # silently drop any legacy `model` field from old extension versions
 
 
 @router.post("/annotate")
@@ -234,7 +230,7 @@ async def annotate(
     async def stream():
         try:
             async with openai_client.chat.completions.stream(
-                model=req.model, messages=messages,
+                model=OPENAI_MODEL, messages=messages,
             ) as s:
                 async for event in s:
                     if event.type == "content.delta":
@@ -271,11 +267,38 @@ async def create_checkout(user: ExtensionUser = Depends(get_extension_user)):
         raise HTTPException(status_code=500, detail=str(e.user_message or e))
 
 
+@router.post("/manage-subscription")
+async def manage_subscription(user: ExtensionUser = Depends(get_extension_user)):
+    """Return a Stripe Customer Portal URL where the user can cancel, update
+    payment method, view invoices, etc."""
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    if not user.stripe_customer_id:
+        raise HTTPException(status_code=400, detail="No subscription found for this device.")
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=user.stripe_customer_id,
+            return_url=f"{BACKEND_URL}/api/extension/portal-return",
+        )
+        return {"url": session.url}
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=500, detail=str(e.user_message or e))
+
+
+@router.get("/portal-return", response_class=HTMLResponse)
+async def portal_return():
+    return """<html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#f9fafb">
+    <h2 style="color:#111827">Done.</h2>
+    <p style="color:#6b7280">Close this tab and re-open Nabu to see the updated status.</p>
+    </body></html>"""
+
+
 @router.get("/checkout-success", response_class=HTMLResponse)
 async def checkout_success():
     return """<html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#f9fafb">
     <h2 style="color:#111827">✓ You're upgraded!</h2>
-    <p style="color:#6b7280">Close this tab and go back to Nabu — you now have unlimited access.</p>
+    <p style="color:#6b7280">Close this tab and re-open Nabu — you now have unlimited access.</p>
     </body></html>"""
 
 
@@ -297,10 +320,15 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
     try:
-        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+        # construct_event verifies the signature. We discard the returned
+        # StripeObject and parse the raw JSON ourselves — in Stripe SDK ≥12,
+        # StripeObject no longer inherits from dict, so `.get()` raises
+        # AttributeError. Plain dicts keep the handler simple.
+        stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
+    event = json.loads(payload)
     etype = event["type"]
     obj   = event["data"]["object"]
 
@@ -322,21 +350,33 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 user.subscribed = True
                 user.email = email
                 user.stripe_customer_id = obj.get("customer")
+                user.cancelled_at = None
                 await db.commit()
 
     elif etype in ("customer.subscription.resumed", "invoice.paid"):
-        # Subscription active / payment succeeded — ensure access is on
+        # Subscription active / payment succeeded — ensure access is on and
+        # clear any prior cancellation timestamp so the 30-day purge doesn't fire.
         customer_id = obj.get("customer")
         user = await get_user_by_customer(customer_id)
-        if user and not user.subscribed:
-            user.subscribed = True
-            await db.commit()
+        if user:
+            changed = False
+            if not user.subscribed:
+                user.subscribed = True
+                changed = True
+            if user.cancelled_at is not None:
+                user.cancelled_at = None
+                changed = True
+            if changed:
+                await db.commit()
 
     elif etype in ("customer.subscription.deleted", "customer.subscription.paused"):
-        # Subscription cancelled or paused — revoke access
+        # Subscription cancelled or paused — revoke access and start the
+        # 30-day clock for email/record retention.
         user = await get_user_by_customer(obj.get("customer"))
         if user:
             user.subscribed = False
+            if user.cancelled_at is None:
+                user.cancelled_at = datetime.now(timezone.utc)
             await db.commit()
 
     elif etype == "invoice.payment_failed":
@@ -351,7 +391,12 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         status      = obj.get("status")  # active, past_due, canceled, paused, trialing, etc.
         user = await get_user_by_customer(customer_id)
         if user:
-            user.subscribed = status in ("active", "trialing")
+            now_active = status in ("active", "trialing")
+            user.subscribed = now_active
+            if now_active:
+                user.cancelled_at = None
+            elif status in ("canceled", "paused", "incomplete_expired") and user.cancelled_at is None:
+                user.cancelled_at = datetime.now(timezone.utc)
             await db.commit()
 
     return {"ok": True}
@@ -445,30 +490,80 @@ async def delete_account(
     user: ExtensionUser = Depends(get_extension_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Permanently delete all data associated with this device."""
+    """Permanently delete all data associated with this device.
+
+    Also cancels the Stripe subscription if present, so the user is not billed
+    after their record is gone.
+    """
+    # Three-state outcome for the popup:
+    #   None  → user had no Stripe customer (free tier) — nothing to do
+    #   True  → at least one active subscription was cancelled
+    #   False → had a Stripe customer but the cancel call failed; user must follow up
+    stripe_cancelled: bool | None = None
+    if user.stripe_customer_id and STRIPE_SECRET_KEY:
+        stripe.api_key = STRIPE_SECRET_KEY
+        try:
+            subs = stripe.Subscription.list(customer=user.stripe_customer_id, status="active", limit=10)
+            for sub in subs.auto_paging_iter():
+                stripe.Subscription.delete(sub.id)
+            stripe_cancelled = True
+        except stripe.StripeError:
+            # Don't block deletion if Stripe call fails — user still gets DB deletion.
+            # Webhook + manual reconciliation will catch leftover subscriptions.
+            stripe_cancelled = False
+
     await db.execute(delete(DailyUsage).where(DailyUsage.user_id == user.id))
     await db.delete(user)
     await db.commit()
-    return {"message": "All your data has been permanently deleted."}
+    return {
+        "message": "All your data has been permanently deleted.",
+        "stripe_cancelled": stripe_cancelled,
+    }
 
 
 # ── Data retention cleanup ─────────────────────────────────────────────────
 
+# Aligned with /privacy: 30-day inactivity window for non-subscribers,
+# 30-day post-cancellation cleanup for emails.
+RETENTION_DAYS = 30
+
+
 async def purge_old_data(db: AsyncSession):
+    """Honor the published 30-day retention policy.
+
+    Three classes of records are eligible for deletion:
+      1. DailyUsage rows older than RETENTION_DAYS.
+      2. Free, unidentified ExtensionUsers (no email, never subscribed) inactive
+         past RETENTION_DAYS — typical free-tier abandonment.
+      3. Cancelled subscribers (any user with cancelled_at set) past
+         RETENTION_DAYS since cancellation — the policy promise that subscriber
+         emails are deleted within 30 days of cancellation.
     """
-    Delete DailyUsage records older than 60 days and
-    ExtensionUsers inactive for more than 90 days (free, no email).
-    Call this from a scheduled job or on startup.
-    """
-    cutoff_usage = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%d")
+    cutoff_usage = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d")
     await db.execute(delete(DailyUsage).where(DailyUsage.date < cutoff_usage))
 
-    cutoff_user = datetime.now(timezone.utc) - timedelta(days=90)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+
+    # Class 2: free + unidentified + inactive
     await db.execute(
         delete(ExtensionUser).where(
             ExtensionUser.subscribed == False,
             ExtensionUser.email == "",
-            ExtensionUser.created_at < cutoff_user,
+            ExtensionUser.cancelled_at.is_(None),
+            ExtensionUser.created_at < cutoff,
         )
     )
+
+    # Class 3: cancelled subscribers past the 30-day grace window. Cascade-style:
+    # also drop their DailyUsage rows so the FK does not block the user delete.
+    cancelled_ids = (await db.execute(
+        select(ExtensionUser.id).where(
+            ExtensionUser.cancelled_at.is_not(None),
+            ExtensionUser.cancelled_at < cutoff,
+        )
+    )).scalars().all()
+    if cancelled_ids:
+        await db.execute(delete(DailyUsage).where(DailyUsage.user_id.in_(cancelled_ids)))
+        await db.execute(delete(ExtensionUser).where(ExtensionUser.id.in_(cancelled_ids)))
+
     await db.commit()

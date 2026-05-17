@@ -55,7 +55,7 @@ function render(entries) {
   const list = document.getElementById('list');
 
   if (!entries.length) {
-    const labels = { threads: 'No threads yet.', todos: 'No todos yet.', reminders: 'No reminders yet.' };
+    const labels = { threads: 'No threads yet.', todos: 'No todos yet.', reminders: 'Nothing saved yet.' };
     list.innerHTML = `<p class="empty">${labels[currentTab]}<br>Select text on any page to get started.</p>`;
     return;
   }
@@ -170,10 +170,13 @@ async function deleteItem(type, id) {
 // ── Clear button ───────────────────────────────────────────────────────────
 
 document.getElementById('clear-btn').addEventListener('click', async () => {
-  const labels = { threads: 'thread history', todos: 'all todos', reminders: 'all reminders' };
+  const labels = { threads: 'all threads (history + saved threads on every page)', todos: 'all todos', reminders: 'all saved-for-later items' };
   if (!confirm(`Clear ${labels[currentTab]}?`)) return;
   if (currentTab === 'threads') {
-    await chrome.storage.local.remove('history');
+    // Clear both the recent-threads index and every per-URL thread blob.
+    const all = await chrome.storage.local.get(null);
+    const threadKeys = Object.keys(all).filter(k => k.startsWith('threads:'));
+    await chrome.storage.local.remove(['history', ...threadKeys]);
   } else {
     await chrome.storage.local.set({ [currentTab]: [] });
   }
