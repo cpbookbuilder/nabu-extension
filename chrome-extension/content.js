@@ -384,7 +384,7 @@
       <button id="annotate-explain">Explain more</button>
       <button id="annotate-todo">+ Todo</button>
       <button id="annotate-remind">🔖 Save</button>
-      <button id="annotate-dashboard" title="Open Nabu dashboard" style="background:#f6c344;color:#202124;font-weight:700;">Nabu ↗</button>
+      <button id="annotate-dashboard" title="Open Nabu dashboard">Nabu ↗</button>
     `;
     document.body.appendChild(div);
 

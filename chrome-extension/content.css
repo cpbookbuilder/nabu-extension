@@ -43,7 +43,7 @@
   gap: 4px;
   white-space: nowrap;
 }
-#annotate-ask, #annotate-mean, #annotate-explain, #annotate-todo, #annotate-remind {
+#annotate-ask, #annotate-mean, #annotate-explain, #annotate-todo, #annotate-remind, #annotate-dashboard {
   border: none;
   border-radius: 18px;
   padding: 7px 14px;
@@ -63,6 +63,8 @@
 #annotate-todo:hover { background: #e2e5e9; }
 #annotate-remind { background: #fef3e2; color: #b06000; }
 #annotate-remind:hover { background: #fde8c0; }
+#annotate-dashboard { background: #fef7e0; color: #b06000; font-weight: 600; }
+#annotate-dashboard:hover { background: #fce8b2; }
 
 /* Toast */
 #annotate-toast {
