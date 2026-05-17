@@ -31,7 +31,7 @@ Identity is a per-install device UUID (no Google OAuth, no Firebase).
 
 ## 3. Stripe
 
-1. Create a product "Nabu Pro", recurring price $0.99/month → copy the `price_…` ID.
+1. Create a product "Nabu Pro", recurring price $4.99/month → copy the `price_…` ID.
 2. Webhook endpoint: `https://<your-backend>/api/extension/webhook`.
 3. Subscribe to events: `checkout.session.completed`, `customer.subscription.resumed`,
    `customer.subscription.deleted`, `customer.subscription.paused`,

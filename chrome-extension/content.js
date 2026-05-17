@@ -607,7 +607,7 @@
         const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
         const hoursLeft = Math.ceil((midnight - now) / 3600000);
         const resetMsg = hoursLeft <= 1 ? 'Resets in less than 1 hour.' : `Resets in ${hoursLeft} hours.`;
-        msgEl.innerHTML = `Daily limit reached. ${resetMsg} <span style="color:#1a73e8;text-decoration:underline;cursor:pointer;" id="nabu-upgrade-link">Upgrade for $0.99/mo</span> for unlimited access.`;
+        msgEl.innerHTML = `Daily limit reached. ${resetMsg} <span style="color:#1a73e8;text-decoration:underline;cursor:pointer;" id="nabu-upgrade-link">Upgrade for $4.99/mo</span> for unlimited access.`;
 
         msgEl.style.color = '#c5221f';
         const upgradeLink = msgEl.querySelector('#nabu-upgrade-link');
@@ -631,7 +631,7 @@
             }
             const { url } = await res.json();
             window.open(url, '_blank');
-            upgradeLink.textContent = 'Upgrade for $0.99/mo';
+            upgradeLink.textContent = 'Upgrade for $4.99/mo';
           } catch (err) {
             upgradeLink.textContent = `Error: ${err.message}`;
           }

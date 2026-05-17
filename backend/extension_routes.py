@@ -20,7 +20,7 @@ from db_models import ExtensionUser, DailyUsage
 router = APIRouter(prefix="/api/extension")
 openai_client = AsyncOpenAI()
 
-FREE_DAILY_LIMIT      = 10
+FREE_DAILY_LIMIT      = 5
 JWT_ALGORITHM         = "HS256"
 JWT_EXPIRE_DAYS       = 30
 STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")

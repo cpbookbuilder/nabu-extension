@@ -25,7 +25,7 @@
 
 - [ ] Create Stripe account at stripe.com
 - [ ] Create a product: "Nabu Pro"
-- [ ] Create a recurring price: $0.99/month
+- [ ] Create a recurring price: $4.99/month
 - [ ] Copy the `STRIPE_PRICE_ID` (starts with `price_`) to Railway env vars
 - [ ] Set up Stripe webhook pointing to `https://<railway-url>/api/extension/webhook`
   - Events to listen for: `checkout.session.completed`, `customer.subscription.deleted`, `customer.subscription.paused`

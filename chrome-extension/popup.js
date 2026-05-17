@@ -66,7 +66,7 @@ async function loadUsage() {
       }
       document.getElementById('usage-text').textContent = usageText;
       document.getElementById('btn-upgrade').hidden = false;
-      document.getElementById('btn-upgrade').textContent = '⚡ Upgrade — $0.99/mo';
+      document.getElementById('btn-upgrade').textContent = '⚡ Upgrade — $4.99/mo';
       document.getElementById('btn-manage').hidden = true;
     }
   } catch (_) {}
@@ -129,7 +129,7 @@ async function upgrade() {
       usageText.style.color = '#f28b82';
     }
   } finally {
-    btn.textContent = '⚡ Upgrade — $0.99/mo';
+    btn.textContent = '⚡ Upgrade — $4.99/mo';
     btn.disabled = false;
   }
 }
