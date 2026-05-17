@@ -194,6 +194,8 @@ async def annotate(
     user: ExtensionUser = Depends(get_extension_user),
     db: AsyncSession = Depends(get_db),
 ):
+    t_start = time.perf_counter()
+
     # Atomic increment with limit check to prevent race condition
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -227,22 +229,55 @@ async def annotate(
             await db.commit()
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    t_after_db = time.perf_counter()
+    # auth_db_ms = time spent on JWT verify + user lookup + usage row update.
+    auth_db_ms = (t_after_db - t_start) * 1000
 
     async def stream():
+        # OpenAI call params — `reasoning_effort=minimal` skips the silent
+        # reasoning pass that gpt-5 family models do by default, which can
+        # add 1-3s of TTFT on short prompts.
+        call_kwargs = {"model": OPENAI_MODEL, "messages": messages}
+        if OPENAI_MODEL.startswith("gpt-5"):
+            call_kwargs["reasoning_effort"] = "minimal"
+
         try:
-            async with openai_client.chat.completions.stream(
-                model=OPENAI_MODEL, messages=messages,
-            ) as s:
+            t_openai_start = time.perf_counter()
+            first_token_at: float | None = None
+            async with openai_client.chat.completions.stream(**call_kwargs) as s:
                 async for event in s:
                     if event.type == "content.delta":
+                        if first_token_at is None:
+                            first_token_at = time.perf_counter()
                         yield f"data: {json.dumps({'delta': event.delta})}\n\n"
+            t_done = time.perf_counter()
+            ttft_ms  = round((first_token_at - t_openai_start) * 1000, 1) if first_token_at else None
+            total_ms = round((t_done - t_start) * 1000, 1)
+            gen_ms   = round((t_done - t_openai_start) * 1000, 1)
+            yield (
+                "data: " + json.dumps({
+                    "timing": {
+                        "auth_db_ms": round(auth_db_ms, 1),
+                        "openai_ttft_ms": ttft_ms,
+                        "openai_gen_ms": gen_ms,
+                        "total_ms": total_ms,
+                    }
+                }) + "\n\n"
+            )
         except Exception:
             # Don't leak internal error details (API keys, internal messages etc.)
             yield f"data: {json.dumps({'error': 'An error occurred. Please try again.'})}\n\n"
         finally:
             yield "data: [DONE]\n\n"
 
-    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
+    headers = {
+        **SSE_HEADERS,
+        # Pre-stream phases — these complete before the response starts streaming
+        # so they're safe to put in response headers. OpenAI timing arrives in
+        # the final SSE event because it isn't known until the stream finishes.
+        "Server-Timing": f"auth_db;dur={auth_db_ms:.1f}",
+    }
+    return StreamingResponse(stream(), media_type="text/event-stream", headers=headers)
 
 
 # ── Stripe checkout ────────────────────────────────────────────────────────

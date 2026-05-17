@@ -752,8 +752,16 @@
         const payload = line.slice(6);
         if (payload === '[DONE]') return text;
         try {
-          const { delta } = JSON.parse(payload);
-          if (delta) { text += delta; el.innerHTML = renderMarkdown(text); }
+          const msg = JSON.parse(payload);
+          if (msg.delta) { text += msg.delta; el.innerHTML = renderMarkdown(text); }
+          if (msg.timing) {
+            console.log('[Nabu timing]',
+              `total ${msg.timing.total_ms}ms`,
+              `(auth+db ${msg.timing.auth_db_ms}ms,`,
+              `openai TTFT ${msg.timing.openai_ttft_ms}ms,`,
+              `openai gen ${msg.timing.openai_gen_ms}ms)`,
+            );
+          }
         } catch { /* partial chunk */ }
       }
     }
