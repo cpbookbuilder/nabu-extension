@@ -41,12 +41,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)  # disable public API docs
 
-# Calls from the extension's content script use host_permissions and bypass CORS,
-# so wide-open CORS is unnecessary. Allow only the landing/privacy origin and
-# any chrome-extension:// installation.
+# MV3 content scripts make fetches with the *host page's* origin (e.g.
+# https://gemini.google.com), not chrome-extension://, so restricting CORS to
+# the extension origin locks the extension out of every webpage. Allow any
+# origin — the JWT bearer token is the actual auth boundary, and credentials
+# are off by default so cookies can't ride along.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^chrome-extension://[a-z]{32}$|^https://nabu-extension-production\.up\.railway\.app$",
+    allow_origins=["*"],
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
