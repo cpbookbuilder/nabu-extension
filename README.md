@@ -58,7 +58,7 @@ User selects text → floating button appears → thread card opens
 ```
 
 **Freemium model:**
-- Free: 5 questions/day per device (no sign-in required)
+- Free: 10 questions/day per device (no sign-in required)
 - Pro: $4.99/month via Stripe — unlimited questions
 
 Device identity is a randomly generated UUID stored locally — no account, no sign-in. Stripe email is used only for subscription recovery.
