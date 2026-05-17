@@ -66,9 +66,11 @@ def make_token(device_id: str) -> str:
 
 
 async def get_extension_user(
-    authorization: str = Header(...),
+    authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> ExtensionUser:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
     try:
         token = authorization.removeprefix("Bearer ").strip()
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -469,8 +471,12 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         return result.scalar_one_or_none()
 
     if etype == "checkout.session.completed":
-        device_id = obj.get("metadata", {}).get("device_id")
-        email     = obj.get("customer_details", {}).get("email") or obj.get("customer_email", "") or ""
+        # Use `or {}` (not just default arg) — Stripe sometimes sends explicit
+        # null values where the key exists; .get(key, {}) returns None then,
+        # and the chained .get on None blows up.
+        device_id = (obj.get("metadata") or {}).get("device_id")
+        email     = ((obj.get("customer_details") or {}).get("email")
+                     or obj.get("customer_email") or "")
         if device_id and UUID_RE.match(str(device_id)):
             result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == device_id))
             user = result.scalar_one_or_none()

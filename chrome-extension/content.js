@@ -762,6 +762,16 @@
         try {
           const msg = JSON.parse(payload);
           if (msg.delta) { text += msg.delta; el.innerHTML = renderMarkdown(text); }
+          if (msg.error) {
+            // Backend caught an OpenAI mid-stream failure. Surface it so the
+            // user knows the answer didn't complete, instead of staring at
+            // a truncated or empty bubble.
+            const note = text
+              ? `\n\n_⚠ ${msg.error} The answer above may be incomplete._`
+              : `⚠ ${msg.error}`;
+            text += note;
+            el.innerHTML = renderMarkdown(text);
+          }
           if (msg.timing) {
             console.log('[Nabu timing]',
               `total ${msg.timing.total_ms}ms`,

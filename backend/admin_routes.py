@@ -138,7 +138,8 @@ async def stats(_: bool = Depends(check_auth), db: AsyncSession = Depends(get_db
     }
 
 
-@router.get("", response_class=HTMLResponse)
+@router.get("", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def admin_page(_: bool = Depends(check_auth)):
     return _DASHBOARD_HTML
 
