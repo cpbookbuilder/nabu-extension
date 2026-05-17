@@ -22,6 +22,7 @@ BASE_CSS = """
     position: sticky; top: 0; background: #0f1117; z-index: 10;
   }
   .nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: #f6c344; }
+  .nav-logo:hover { text-decoration: none; opacity: .85; }
   .nav-logo img { width: 32px; height: 32px; border-radius: 6px; }
   .nav-links { display: flex; gap: 24px; font-size: 14px; }
 
@@ -131,9 +132,9 @@ BASE_CSS = """
 
 NAV = """
 <nav class="nav">
-  <div class="nav-logo">
+  <a class="nav-logo" href="/" title="Back to Nabu home">
     <img src="/static/icon128.png" alt="Nabu"> Nabu
-  </div>
+  </a>
   <div class="nav-links">
     <a href="/">Home</a>
     <a href="/privacy">Privacy</a>

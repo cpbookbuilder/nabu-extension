@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_db
 from db_models import ExtensionUser, DailyUsage
+from pages_routes import BASE_CSS, NAV, FOOTER
 
 router = APIRouter(prefix="/api/extension")
 openai_client = AsyncOpenAI()
@@ -289,6 +290,9 @@ async def manage_subscription(user: ExtensionUser = Depends(get_extension_user))
 def _branded_page(*, icon: str, icon_color: str, title: str, body: str, auto_close: bool) -> str:
     """Render a Nabu-branded full-page response shown after Stripe redirects.
 
+    Uses the shared NAV + FOOTER from pages_routes so this is visually
+    consistent with the landing and privacy pages.
+
     auto_close: try window.close() after 3s with countdown; show manual fallback if blocked.
     """
     countdown_html = """
@@ -309,51 +313,47 @@ def _branded_page(*, icon: str, icon_color: str, title: str, body: str, auto_clo
         }, 1000);
       </script>
     """ if auto_close else ""
+    extra_css = f"""
+      .card-wrap {{ display: flex; justify-content: center; padding: 60px 24px 40px; }}
+      .return-card {{
+        max-width: 460px; width: 100%; text-align: center; padding: 40px 32px;
+        background: #141720; border: 1px solid #1e2330; border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      }}
+      .return-card .icon {{
+        width: 64px; height: 64px; border-radius: 50%;
+        background: {icon_color}; color: #0f1117;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 36px; font-weight: 800;
+        margin: 0 auto 20px;
+        animation: pop .35s cubic-bezier(.2,.9,.3,1.4) both;
+      }}
+      @keyframes pop {{
+        0% {{ transform: scale(0); opacity: 0; }}
+        100% {{ transform: scale(1); opacity: 1; }}
+      }}
+      .return-card h1 {{ font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 12px; }}
+      .return-card p {{ font-size: 14px; color: #94a3b8; line-height: 1.6; }}
+    """
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nabu</title>
-  <style>
-    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f1117; color: #e2e8f0;
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      padding: 24px;
-    }}
-    .card {{
-      max-width: 420px; text-align: center; padding: 40px 32px;
-      background: #141720; border: 1px solid #1e2330; border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0,0,0,.4);
-    }}
-    .icon {{
-      width: 64px; height: 64px; border-radius: 50%;
-      background: {icon_color}; color: #0f1117;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 36px; font-weight: 800;
-      margin: 0 auto 20px;
-      animation: pop .35s cubic-bezier(.2,.9,.3,1.4) both;
-    }}
-    @keyframes pop {{
-      0% {{ transform: scale(0); opacity: 0; }}
-      100% {{ transform: scale(1); opacity: 1; }}
-    }}
-    h1 {{ font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 12px; }}
-    p {{ font-size: 14px; color: #94a3b8; line-height: 1.6; }}
-    .brand {{ margin-top: 28px; font-size: 11px; color: #475569; letter-spacing: .12em; text-transform: uppercase; }}
-    .brand span {{ color: #f6c344; font-weight: 700; }}
-  </style>
+  <style>{BASE_CSS}{extra_css}</style>
 </head>
 <body>
-  <div class="card">
-    <div class="icon">{icon}</div>
-    <h1>{title}</h1>
-    <p>{body}</p>
-    {countdown_html}
-    <div class="brand">· <span>Nabu</span> ·</div>
+  {NAV}
+  <div class="card-wrap">
+    <div class="return-card">
+      <div class="icon">{icon}</div>
+      <h1>{title}</h1>
+      <p>{body}</p>
+      {countdown_html}
+    </div>
   </div>
+  {FOOTER}
 </body>
 </html>"""
 
@@ -364,7 +364,7 @@ async def portal_return():
         icon="✓",
         icon_color="#f6c344",
         title="Subscription updated",
-        body="Re-open Nabu from your browser toolbar to see the latest plan status.",
+        body="Re-open Nabu from your extension bar to see the latest plan status.",
         auto_close=True,
     )
 
@@ -376,11 +376,11 @@ async def checkout_success():
         icon_color="#81c995",
         title="You're now Pro",
         body=(
-            "Unlimited questions are live. Open Nabu from your browser toolbar to start."
+            "Unlimited questions are live. Open Nabu from your extension bar to start."
             "<br><br>"
             "<span style='color:#cbd5e1;font-size:13px;font-weight:600;'>How to cancel anytime:</span>"
             "<ol style='text-align:left;color:#94a3b8;font-size:13px;margin:8px auto 0;max-width:280px;padding-left:20px;line-height:1.7;'>"
-            "<li>Click the <strong>Nabu</strong> icon in your browser toolbar.</li>"
+            "<li>Click the <strong>Nabu</strong> icon in your extension bar.</li>"
             "<li>Tap <strong>Manage subscription</strong> in the popup.</li>"
             "<li>Click <strong>Cancel plan</strong> in the portal that opens.</li>"
             "</ol>"
