@@ -75,6 +75,15 @@ async def stats(_: bool = Depends(check_auth), db: AsyncSession = Depends(get_db
         "SELECT COUNT(*) FROM extension_daily_usage WHERE date = :d AND count >= 10"
     ), {"d": today})).scalar()
 
+    questions_all_time = (await db.execute(text(
+        "SELECT COALESCE(SUM(count), 0) FROM extension_daily_usage"
+    ))).scalar()
+
+    questions_30d_total = (await db.execute(text("""
+        SELECT COALESCE(SUM(count), 0) FROM extension_daily_usage
+        WHERE date >= TO_CHAR(NOW() - INTERVAL '30 days', 'YYYY-MM-DD')
+    """))).scalar()
+
     dau_30d = (await db.execute(text("""
         SELECT date, COUNT(DISTINCT user_id) AS dau
         FROM extension_daily_usage
@@ -82,7 +91,7 @@ async def stats(_: bool = Depends(check_auth), db: AsyncSession = Depends(get_db
         GROUP BY date ORDER BY date
     """))).all()
 
-    questions_30d = (await db.execute(text("""
+    questions_per_day_30d = (await db.execute(text("""
         SELECT date, SUM(count) AS questions
         FROM extension_daily_usage
         WHERE date >= TO_CHAR(NOW() - INTERVAL '30 days', 'YYYY-MM-DD')
@@ -115,12 +124,15 @@ async def stats(_: bool = Depends(check_auth), db: AsyncSession = Depends(get_db
             "active_today": active_today or 0,
             "active_7d": active_7d or 0,
             "questions_today": int(today_questions or 0),
+            "questions_30d_total": int(questions_30d_total or 0),
+            "questions_all_time": int(questions_all_time or 0),
             "hit_limit_today": hit_limit_today or 0,
             "estimated_today_cost_usd": round((today_questions or 0) * COST_PER_QUESTION, 4),
+            "estimated_mrr_usd": round(pro * 4.99, 2),
             "conversion_pct": round(100 * pro / max(total, 1), 2),
         },
         "dau_30d":       [{"date": r[0], "value": r[1]} for r in dau_30d],
-        "questions_30d": [{"date": r[0], "value": int(r[1])} for r in questions_30d],
+        "questions_30d": [{"date": r[0], "value": int(r[1])} for r in questions_per_day_30d],
         "installs_30d":  [{"date": r[0], "value": r[1]} for r in installs_30d],
         "distribution_today": [{"bucket": r[0], "users": r[1]} for r in distribution_today],
     }
@@ -188,10 +200,12 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 
     const k = d.kpis;
     const kpis = [
+      ['Questions all-time', fmt(k.questions_all_time), `${fmt(k.questions_30d_total)} last 30d`, 'accent'],
       ['Active (today)',   fmt(k.active_today),     null,                'good'],
       ['Active (7d)',      fmt(k.active_7d),        'unique devices',    'accent'],
       ['Total installs',   fmt(k.total_users),      null,                ''],
       ['Pro subscribers',  fmt(k.pro_users),        `${k.conversion_pct}% of installs`, 'accent'],
+      ['Estimated MRR',    fmtUSD(k.estimated_mrr_usd), `${fmt(k.pro_users)} × $4.99`, 'good'],
       ['Questions today',  fmt(k.questions_today),  `~${fmtUSD(k.estimated_today_cost_usd)} OpenAI`, ''],
       ['Hit limit today',  fmt(k.hit_limit_today),  k.active_today ? `${Math.round(100*k.hit_limit_today/k.active_today)}% of active` : '', 'warn'],
       ['Cancelled (grace)', fmt(k.cancelled_in_grace), 'in 30-day window', ''],
