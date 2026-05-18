@@ -4,7 +4,10 @@ const BACKEND_URL = 'https://nabu-extension-production.up.railway.app';
 
 document.addEventListener('DOMContentLoaded', async () => {
   loadUsage();
-  renderHistory();
+
+  document.getElementById('open-dashboard').addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+  });
 
   document.getElementById('btn-upgrade').addEventListener('click', upgrade);
   document.getElementById('btn-manage').addEventListener('click', manageSubscription);
@@ -22,10 +25,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-delete').addEventListener('click', deleteAccount);
-
-  document.getElementById('see-all').addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
-  });
 });
 
 // ── Usage ──────────────────────────────────────────────────────────────────
@@ -228,49 +227,3 @@ async function clearAllLocalData() {
   if (keysToRemove.length) await chrome.storage.local.remove(keysToRemove);
 }
 
-// ── History ────────────────────────────────────────────────────────────────
-
-async function renderHistory() {
-  const list = document.getElementById('history-list');
-  const { history = [] } = await chrome.storage.local.get('history');
-  if (!history.length) {
-    list.innerHTML = '<p class="empty">No threads yet.<br>Select text on any page to start.</p>';
-    return;
-  }
-  const recent = history.slice(0, 3);
-  list.innerHTML = recent.map(e => `
-    <div class="h-entry">
-      <div class="h-anchor">"${escapeHtml(e.anchor)}"</div>
-      <div class="h-question">${escapeHtml(e.firstQuestion || '(no question yet)')}</div>
-      <div class="h-meta">
-        <span class="h-url" title="${escapeAttr(e.url)}">${shortUrl(e.url)}</span>
-        <span>${relativeDate(e.savedAt)}</span>
-      </div>
-    </div>
-  `).join('');
-  list.querySelectorAll('.h-entry').forEach((el, i) => {
-    el.addEventListener('click', () =>
-      chrome.runtime.sendMessage({ type: 'openAndScroll', url: recent[i].url, threadId: recent[i].id })
-    );
-  });
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function shortUrl(url) {
-  try {
-    const u = new URL(url);
-    return u.hostname + (u.pathname.length > 20 ? u.pathname.slice(0, 20) + '…' : u.pathname);
-  } catch (_) { return url.slice(0, 35); }
-}
-function relativeDate(ts) {
-  const diff = Date.now() - ts, m = Math.floor(diff / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return d < 30 ? `${d}d ago` : `${Math.floor(d / 30)}mo ago`;
-}
-function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
