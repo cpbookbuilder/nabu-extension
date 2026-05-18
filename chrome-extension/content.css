@@ -65,6 +65,13 @@
 #annotate-remind:hover { background: #fde8c0; }
 #annotate-dashboard { background: #fef7e0; color: #b06000; font-weight: 600; }
 #annotate-dashboard:hover { background: #fce8b2; }
+#annotate-close {
+  background: none; border: none; cursor: pointer;
+  color: #80868b; font-size: 20px; line-height: 1;
+  padding: 0 8px; margin-left: 2px; align-self: center;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+#annotate-close:hover { color: #202124; }
 
 /* Toast */
 #annotate-toast {

@@ -385,6 +385,7 @@
       <button id="annotate-todo">+ Todo</button>
       <button id="annotate-remind">🔖 Save</button>
       <button id="annotate-dashboard" title="Open Nabu dashboard">Nabu ↗</button>
+      <button id="annotate-close" title="Close" aria-label="Close">×</button>
     `;
     document.body.appendChild(div);
 
@@ -429,6 +430,13 @@
     document.getElementById('annotate-dashboard').addEventListener('click', () => {
       clearTimeout(popoverTimer);
       chrome.runtime.sendMessage({ type: 'openDashboard' });
+      removePopover();
+      window.getSelection()?.removeAllRanges();
+    });
+
+    document.getElementById('annotate-close').addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearTimeout(popoverTimer);
       removePopover();
       window.getSelection()?.removeAllRanges();
     });
