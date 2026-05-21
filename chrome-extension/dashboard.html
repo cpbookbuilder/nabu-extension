@@ -143,6 +143,23 @@
 
     .empty { text-align: center; color: #5f6368; font-size: 14px; padding: 48px 0; line-height: 1.8; }
 
+    /* ── Stats strip ────────────────────────────────────────── */
+    .stats {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-tile {
+      background: #2d2e2f; border: 1px solid #3c4043; border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .stat-num {
+      font-size: 22px; font-weight: 700; color: #e3e3e3; line-height: 1.1;
+    }
+    .stat-label {
+      font-size: 11px; color: #9aa0a6; text-transform: uppercase;
+      letter-spacing: .06em; margin-top: 4px;
+    }
+
     .privacy-blurb {
       margin-top: 24px; padding: 12px 14px; background: #1a1f2e; border-radius: 8px;
       font-size: 12px; color: #5f6368; line-height: 1.6;
@@ -201,6 +218,22 @@
         </p>
         <button class="btn btn-danger" id="btn-delete">Confirm delete</button>
         <div class="acct-msg" id="delete-msg"></div>
+      </div>
+    </div>
+
+    <!-- Activity stats -->
+    <div class="stats">
+      <div class="stat-tile">
+        <div class="stat-num" id="stat-questions">0</div>
+        <div class="stat-label">Questions asked</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" id="stat-todos">0</div>
+        <div class="stat-label">Todos added</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num" id="stat-saved">0</div>
+        <div class="stat-label">Saved</div>
       </div>
     </div>
 

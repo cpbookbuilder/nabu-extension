@@ -79,6 +79,7 @@
         anchor: r.anchor.slice(0, 120),
         surroundingText: (r.pageContext?.surroundingText || '').slice(0, 300),
         firstQuestion: (r.messages.find(m => m.role === 'user')?.content || '').slice(0, 200),
+        questionCount: r.messages.filter(m => m.role === 'user').length,
         createdAt: r.createdAt,
         savedAt: r.savedAt,
       }));
@@ -212,7 +213,27 @@
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
+  // Google Docs (and Slides/Sheets) render text on a <canvas>, so DOM selection
+  // can't see the document body. Bail with a one-time toast instead of leaving
+  // the user wondering why nothing happens. Published views (/pub) are normal
+  // HTML and work fine.
+  function isUnsupportedCanvasApp() {
+    if (location.hostname !== 'docs.google.com') return false;
+    if (/\/(document|presentation|spreadsheets)\/d\/[^/]+\/pub/.test(location.pathname)) return false;
+    return /\/(document|presentation|spreadsheets)\/d\//.test(location.pathname);
+  }
+
   function init() {
+    if (isUnsupportedCanvasApp()) {
+      try {
+        if (!sessionStorage.getItem('nabu_docs_notice')) {
+          sessionStorage.setItem('nabu_docs_notice', '1');
+          // Defer so the page has a body to mount the toast.
+          setTimeout(() => showToast("Nabu can't read Google Docs — text is rendered on a canvas, not the page DOM."), 1500);
+        }
+      } catch (_) {}
+      return;
+    }
     initFloatingBtn();
     watchForResponses();
     document.addEventListener('mouseup', onMouseUp, { capture: true });
@@ -679,7 +700,11 @@
     const msgs = root.getElementById('msgs');
     const el = document.createElement('div');
     el.className = `msg ${role}${streaming ? ' streaming' : ''}`;
-    if (role === 'assistant' && !streaming && text) {
+    if (role === 'assistant' && streaming && !text) {
+      // Pre-token thinking indicator — replaced as soon as the first delta arrives.
+      el.classList.add('thinking');
+      el.innerHTML = '<span class="thinking-dots"><span></span><span></span><span></span></span>';
+    } else if (role === 'assistant' && !streaming && text) {
       el._md = true; el.innerHTML = renderMarkdown(text);
     } else {
       el.textContent = text;
@@ -769,7 +794,11 @@
         if (payload === '[DONE]') return text;
         try {
           const msg = JSON.parse(payload);
-          if (msg.delta) { text += msg.delta; el.innerHTML = renderMarkdown(text); }
+          if (msg.delta) {
+            if (el.classList.contains('thinking')) el.classList.remove('thinking');
+            text += msg.delta;
+            el.innerHTML = renderMarkdown(text);
+          }
           if (msg.error) {
             // Backend caught an OpenAI mid-stream failure. Surface it so the
             // user knows the answer didn't complete, instead of staring at
@@ -998,6 +1027,24 @@
           content: '▋';
           animation: blink 1s step-end infinite;
           color: #9aa0a6;
+        }
+        .msg.streaming.thinking::after { content: none; }
+        .thinking-dots {
+          display: inline-flex;
+          gap: 4px;
+          align-items: center;
+          height: 14px;
+        }
+        .thinking-dots span {
+          width: 5px; height: 5px; border-radius: 50%;
+          background: #9aa0a6;
+          animation: nabu-dot-bounce 1.2s ease-in-out infinite;
+        }
+        .thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+        .thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+        @keyframes nabu-dot-bounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30% { transform: translateY(-4px); opacity: 1; }
         }
         @keyframes blink { 50% { opacity: 0; } }
         .msg.assistant strong { font-weight: 600; }

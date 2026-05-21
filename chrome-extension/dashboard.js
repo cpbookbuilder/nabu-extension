@@ -176,6 +176,12 @@ async function load() {
   const { history = [], todos = [], reminders = [] } =
     await chrome.storage.local.get(['history', 'todos', 'reminders']);
 
+  // questionCount was added in v1.2 — older history entries fall back to 1.
+  const totalQuestions = history.reduce((sum, h) => sum + (h.questionCount ?? 1), 0);
+  document.getElementById('stat-questions').textContent = totalQuestions.toLocaleString();
+  document.getElementById('stat-todos').textContent     = todos.length.toLocaleString();
+  document.getElementById('stat-saved').textContent     = reminders.length.toLocaleString();
+
   const dataMap = { threads: history, todos, reminders };
   allData = (dataMap[currentTab] || []).sort((a, b) =>
     (b.savedAt || b.createdAt || 0) - (a.savedAt || a.createdAt || 0) ||
