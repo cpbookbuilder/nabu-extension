@@ -403,3 +403,12 @@ document.getElementById('delete-toggle').addEventListener('click', () => {
 
 loadAccount();
 load();
+
+// Live-update stats + list when threads/todos/reminders change in another tab.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  const touched = Object.keys(changes);
+  if (touched.some(k => k === 'history' || k === 'todos' || k === 'reminders' || k.startsWith('threads:'))) {
+    load();
+  }
+});
