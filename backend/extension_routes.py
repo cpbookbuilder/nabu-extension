@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import time
@@ -14,9 +15,11 @@ from pydantic import BaseModel, field_validator, EmailStr
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_db
+from db import get_db, AsyncSessionLocal
 from db_models import ExtensionUser, DailyUsage
 from pages_routes import BASE_CSS, NAV, FOOTER
+
+logger = logging.getLogger("nabu.extension")
 
 router = APIRouter(prefix="/api/extension")
 openai_client = AsyncOpenAI()
@@ -230,10 +233,33 @@ async def annotate(
     else:
         await db.commit()
 
+    # Capture primitives — the request session/user may not be safe to touch
+    # from inside the streaming generator after the response has started.
+    user_id = user.id
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
     t_after_db = time.perf_counter()
     # auth_db_ms = time spent on JWT verify + user lookup + usage row update.
     auth_db_ms = (t_after_db - t_start) * 1000
+
+    async def _refund_slot():
+        """Decrement today's counter for this user. Used when OpenAI fails
+        before emitting any tokens — without this, a broken upstream would
+        burn through a free user's daily quota.
+        """
+        try:
+            async with AsyncSessionLocal() as s:
+                await s.execute(
+                    update(DailyUsage)
+                    .where(
+                        DailyUsage.user_id == user_id,
+                        DailyUsage.date == today,
+                        DailyUsage.count > 0,
+                    )
+                    .values(count=DailyUsage.count - 1)
+                )
+                await s.commit()
+        except Exception:
+            logger.exception("refund_slot failed user=%s date=%s", user_id, today)
 
     async def stream():
         # OpenAI call params — `reasoning_effort=minimal` skips the silent
@@ -243,9 +269,9 @@ async def annotate(
         if OPENAI_MODEL.startswith("gpt-5"):
             call_kwargs["reasoning_effort"] = "minimal"
 
+        first_token_at: float | None = None
+        t_openai_start = time.perf_counter()
         try:
-            t_openai_start = time.perf_counter()
-            first_token_at: float | None = None
             async with openai_client.chat.completions.stream(**call_kwargs) as s:
                 async for event in s:
                     if event.type == "content.delta":
@@ -266,9 +292,16 @@ async def annotate(
                     }
                 }) + "\n\n"
             )
-        except Exception:
-            # Don't leak internal error details (API keys, internal messages etc.)
-            yield f"data: {json.dumps({'error': 'An error occurred. Please try again.'})}\n\n"
+        except Exception as e:
+            # If nothing was streamed, the user effectively got no answer.
+            # Refund the slot and signal a retriable error to the client.
+            logger.exception("openai stream failed user=%s first_token=%s", user_id, first_token_at is not None)
+            if first_token_at is None:
+                await _refund_slot()
+                err_payload = {"error": "Service temporarily unavailable. Please try again.", "category": "upstream_unavailable", "retriable": True}
+            else:
+                err_payload = {"error": "The answer stopped mid-stream. Please try again.", "category": "upstream_mid_stream", "retriable": True}
+            yield f"data: {json.dumps(err_payload)}\n\n"
         finally:
             yield "data: [DONE]\n\n"
 

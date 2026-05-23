@@ -83,7 +83,12 @@
         createdAt: r.createdAt,
         savedAt: r.savedAt,
       }));
-      const merged = [...thisPage, ...existing.filter(e => e.url !== url)]
+      // ID-based merge — preserves history entries whose thread was closed on
+      // the current page (they drop out of threads:<url> but remain in the log
+      // until the 200-entry cap rotates them out). Previously this filtered by
+      // url, which meant closing a card erased the thread from the dashboard.
+      const thisPageIds = new Set(thisPage.map(r => r.id));
+      const merged = [...thisPage, ...existing.filter(e => !thisPageIds.has(e.id))]
         .sort((a, b) => b.savedAt - a.savedAt || b.createdAt - a.createdAt)
         .slice(0, 200);
       await chrome.storage.local.set({ history: merged });

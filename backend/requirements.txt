@@ -1,9 +1,10 @@
-fastapi
-uvicorn[standard]
-openai
-python-dotenv
-sqlalchemy[asyncio]
-asyncpg
-greenlet
-PyJWT
-stripe
+# Exact pins for reproducible deploys. Bump deliberately, run tests, then commit.
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+openai==1.59.0
+python-dotenv==1.0.1
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+greenlet==3.1.1
+PyJWT==2.10.1
+stripe==11.4.1
