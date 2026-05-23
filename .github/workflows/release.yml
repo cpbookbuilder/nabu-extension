@@ -1,0 +1,55 @@
+name: release-extension
+
+# Triggered by tags shaped extension-vX.Y.Z. Builds the chrome-extension/ zip
+# and attaches it to a GitHub Release for manual upload to the Chrome Web Store.
+#
+# Conventions:
+#   - Tag must match the version field in chrome-extension/manifest.json.
+#   - Workflow fails if they disagree (catches forgotten manifest bumps).
+on:
+  push:
+    tags:
+      - "extension-v*"
+
+permissions:
+  contents: write  # needed to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse version from tag
+        id: ver
+        run: |
+          tag="${GITHUB_REF_NAME#extension-v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Verify manifest.json matches tag
+        run: |
+          manifest_ver=$(grep -E '"version"' chrome-extension/manifest.json | head -1 | sed -E 's/.*"version"[^"]*"([^"]+)".*/\1/')
+          if [ "$manifest_ver" != "${{ steps.ver.outputs.tag }}" ]; then
+            echo "::error::manifest.json version ($manifest_ver) does not match tag (${{ steps.ver.outputs.tag }})."
+            echo "Bump chrome-extension/manifest.json before re-tagging."
+            exit 1
+          fi
+
+      - name: Build zip
+        run: |
+          cd chrome-extension
+          zip -r "../nabu-extension-v${{ steps.ver.outputs.tag }}.zip" . \
+            -x "*.DS_Store" "*.map"
+          cd ..
+          ls -lh "nabu-extension-v${{ steps.ver.outputs.tag }}.zip"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "nabu-extension-v${{ steps.ver.outputs.tag }}.zip" \
+            --title "Extension v${{ steps.ver.outputs.tag }}" \
+            --notes "See CHANGELOG.md for user-visible changes.
+
+          Upload \`nabu-extension-v${{ steps.ver.outputs.tag }}.zip\` to the [Chrome Web Store dashboard](https://chrome.google.com/webstore/devconsole)."
