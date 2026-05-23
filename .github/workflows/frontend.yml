@@ -3,14 +3,12 @@ name: frontend
 on:
   push:
     branches: [main]
-    paths:
-      - "chrome-extension/**"
-      - ".github/workflows/frontend.yml"
   pull_request:
-    paths:
-      - "chrome-extension/**"
-      - ".github/workflows/frontend.yml"
   workflow_dispatch:
+
+# Runs on every PR (no paths filter) so branch protection can require this
+# check — otherwise a backend-only PR would stall waiting for a check that
+# never reports. The job is ~10s; gating cost is negligible.
 
 jobs:
   check:
