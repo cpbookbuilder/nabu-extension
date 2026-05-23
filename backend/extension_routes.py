@@ -198,37 +198,37 @@ async def annotate(
 ):
     t_start = time.perf_counter()
 
-    # Atomic increment with limit check to prevent race condition
+    # Atomic increment with limit check to prevent race condition.
+    # Pro users are also counted (admin analytics rely on this); only the
+    # free-tier daily cap is enforced.
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    limit_guard = () if user.subscribed else (DailyUsage.count < FREE_DAILY_LIMIT,)
 
-    if not user.subscribed:
-        # Use atomic UPDATE with conditional to avoid race condition
-        result = await db.execute(
-            update(DailyUsage)
-            .where(
-                DailyUsage.user_id == user.id,
-                DailyUsage.date == today,
-                DailyUsage.count < FREE_DAILY_LIMIT,
-            )
-            .values(count=DailyUsage.count + 1)
-            .returning(DailyUsage.count)
+    result = await db.execute(
+        update(DailyUsage)
+        .where(
+            DailyUsage.user_id == user.id,
+            DailyUsage.date == today,
+            *limit_guard,
         )
-        updated = result.fetchone()
+        .values(count=DailyUsage.count + 1)
+        .returning(DailyUsage.count)
+    )
+    updated = result.fetchone()
 
-        if updated is None:
-            # Either row doesn't exist or limit already reached — check which
-            usage = await get_or_create_usage(db, user.id)
+    if updated is None:
+        # Either today's row doesn't exist yet, or (free users only) the cap was hit.
+        usage = await get_or_create_usage(db, user.id)
+        if not user.subscribed and usage.count >= FREE_DAILY_LIMIT:
             await db.commit()
-            if usage.count >= FREE_DAILY_LIMIT:
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Free limit of {FREE_DAILY_LIMIT} questions/day reached. Upgrade for unlimited access.",
-                )
-            # Row was just created (count=0), increment it
-            usage.count = 1
-            await db.commit()
-        else:
-            await db.commit()
+            raise HTTPException(
+                status_code=429,
+                detail=f"Free limit of {FREE_DAILY_LIMIT} questions/day reached. Upgrade for unlimited access.",
+            )
+        usage.count += 1
+        await db.commit()
+    else:
+        await db.commit()
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
     t_after_db = time.perf_counter()
