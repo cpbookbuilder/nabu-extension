@@ -110,6 +110,42 @@ Railway watches `main`. Every merge to `main` triggers a redeploy of the
 backend service. CI runs *before* merge (not before deploy), so a green main
 == a known-good deploy.
 
+### Required Railway dashboard settings
+
+One-time setup to align Railway with this repo's new flow:
+
+1. **Settings → Source → Branch** = `main`.
+   No change needed if it's already this — that's the only branch we deploy.
+2. **Settings → Healthcheck → Healthcheck Path** = `/healthz`.
+   Without this, Railway marks a crashed deploy as "live" and serves 502s.
+   With it, a failing boot is rolled back automatically.
+3. **Settings → Healthcheck → Healthcheck Timeout** = `30s` (default is fine
+   for most cases; bump if Postgres cold-start is slow).
+4. **Variables tab** — confirm these are set (boot will fail-fast if any of
+   the first three is missing):
+   - `DATABASE_URL` (Railway reference, e.g. `${{Postgres.DATABASE_URL}}`)
+   - `JWT_SECRET`
+   - `OPENAI_API_KEY`
+   - Optional: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`,
+     `BACKEND_URL`, `ADMIN_PASSWORD`, `LOG_LEVEL` (default `INFO`)
+5. **(Optional) Settings → Deploy Triggers → Wait for CI Status** = enabled.
+   Tells Railway to wait for the GitHub `test` + `check` workflows to pass
+   *after* the merge commit, then deploy. Belt-and-suspenders since branch
+   protection already enforces CI before merge.
+
+### No staging today
+
+Single Railway service, single environment. If you later need a staging:
+
+- Easiest: enable Railway's **PR Environments** — every PR gets its own
+  ephemeral service with a unique URL. Pair with a separate Postgres
+  branch/copy. Costs scale with concurrent PRs.
+- Or create a second service `nabu-staging` pointed at a `staging` git
+  branch, with separate env vars.
+
+For now, treat `main` as production — that's what branch protection + CI
+exists to defend.
+
 If a deploy fails mid-stream:
 
 - App boot retries DB connection 5× with exponential backoff (1/2/4/8/16s)
