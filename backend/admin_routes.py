@@ -7,6 +7,7 @@ Intentionally narrow: only metrics derivable from the existing schema
 (extension_users + extension_daily_usage). No event log, no PII.
 """
 from __future__ import annotations
+
 import os
 import secrets
 from datetime import datetime, timezone
@@ -18,6 +19,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_db
+
+UTC = timezone.utc  # datetime.UTC is 3.11+; we floor at 3.10 for portability.
 
 router = APIRouter(prefix="/admin")
 security = HTTPBasic()
@@ -48,7 +51,7 @@ def check_auth(creds: HTTPBasicCredentials = Depends(security)):
 
 @router.get("/stats")
 async def stats(_: bool = Depends(check_auth), db: AsyncSession = Depends(get_db)):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
 
     user_stats = (await db.execute(text("""
         SELECT
@@ -116,7 +119,7 @@ async def stats(_: bool = Depends(check_auth), db: AsyncSession = Depends(get_db
     total = user_stats[0] or 0
     pro = user_stats[1] or 0
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "kpis": {
             "total_users": total,
             "pro_users": pro,

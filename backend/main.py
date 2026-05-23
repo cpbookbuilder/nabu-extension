@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # ── Fail-fast env validation ──────────────────────────────────────────────
@@ -53,9 +54,10 @@ logging.getLogger("uvicorn.access").handlers = []
 logger = logging.getLogger("nabu")
 
 from admin_routes import router as admin_router
-from extension_routes import router as ext_router, purge_old_data
-from pages_routes import router as pages_router
 from db import AsyncSessionLocal, create_tables, engine
+from extension_routes import purge_old_data
+from extension_routes import router as ext_router
+from pages_routes import router as pages_router
 
 PURGE_INTERVAL_SECONDS = 24 * 60 * 60  # daily
 

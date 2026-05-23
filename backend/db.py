@@ -1,5 +1,6 @@
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 # Railway provides postgresql://, asyncpg needs postgresql+asyncpg://
@@ -19,8 +20,9 @@ async def get_db():
 
 
 async def create_tables():
-    import db_models  # noqa: F401 — registers models with Base
     from sqlalchemy import text
+
+    import db_models  # noqa: F401 — registers models with Base
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

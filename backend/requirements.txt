@@ -1,7 +1,7 @@
 # Exact pins for reproducible deploys. Bump deliberately, run tests, then commit.
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
-openai==1.59.0
+openai==2.38.0
 python-dotenv==1.0.1
 sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0

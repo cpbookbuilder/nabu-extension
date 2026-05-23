@@ -1,0 +1,24 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    # Pydantic emits a class-config deprecation that we don't own.
+    "ignore::DeprecationWarning:pydantic.*",
+]
+
+[tool.ruff]
+line-length = 110
+# Match the floor we test against — production is on 3.13 but we keep the
+# floor low so contributors don't need to install a specific Python first.
+target-version = "py310"
+
+[tool.ruff.lint]
+# Conservative: catch real bugs, not style nits.
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # line length — we set 110 above; long SQL/HTML strings are common here
+    "B008",  # FastAPI Depends() in defaults is the idiomatic pattern
+    "E402",  # main.py does env validation before imports; conftest.py sets env first
+]

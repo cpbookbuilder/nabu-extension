@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import String, Text, Boolean, Integer, DateTime, ForeignKey, UniqueConstraint, func
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
+
 from db import Base
 
 
@@ -12,11 +14,11 @@ class ExtensionUser(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)  # device UUID
     email: Mapped[str] = mapped_column(String, nullable=False, default="")
     subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    stripe_customer_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Set when a subscription is cancelled/paused; cleared when reactivated.
     # Used by purge_old_data to honour the published "30 days after cancellation" policy.
-    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DailyUsage(Base):

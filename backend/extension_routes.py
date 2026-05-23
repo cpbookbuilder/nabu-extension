@@ -4,20 +4,22 @@ import os
 import re
 import time
 from collections import defaultdict
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import jwt
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from openai import AsyncOpenAI
-from pydantic import BaseModel, field_validator, EmailStr
-from sqlalchemy import select, update, delete
+from pydantic import BaseModel, field_validator
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_db, AsyncSessionLocal
-from db_models import ExtensionUser, DailyUsage
-from pages_routes import BASE_CSS, NAV, FOOTER
+from db import AsyncSessionLocal, get_db
+from db_models import DailyUsage, ExtensionUser
+from pages_routes import BASE_CSS, FOOTER, NAV
+
+UTC = timezone.utc  # datetime.UTC is 3.11+; we floor at 3.10 for portability.
 
 logger = logging.getLogger("nabu.extension")
 
@@ -64,7 +66,7 @@ def check_rate_limit(key: str, max_calls: int, window_seconds: int):
 # ── JWT ────────────────────────────────────────────────────────────────────
 
 def make_token(device_id: str) -> str:
-    exp = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
+    exp = datetime.now(UTC) + timedelta(days=JWT_EXPIRE_DAYS)
     return jwt.encode({"sub": device_id, "exp": exp}, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -79,9 +81,9 @@ async def get_extension_user(
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         device_id = payload["sub"]
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired. Please re-open the extension.")
+        raise HTTPException(status_code=401, detail="Token expired. Please re-open the extension.") from None
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token") from None
     result = await db.execute(select(ExtensionUser).where(ExtensionUser.id == device_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -94,7 +96,7 @@ async def get_extension_user(
 UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 
 async def get_or_create_usage(db: AsyncSession, user_id: str) -> DailyUsage:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     result = await db.execute(
         select(DailyUsage).where(DailyUsage.user_id == user_id, DailyUsage.date == today)
     )
@@ -204,7 +206,7 @@ async def annotate(
     # Atomic increment with limit check to prevent race condition.
     # Pro users are also counted (admin analytics rely on this); only the
     # free-tier daily cap is enforced.
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     limit_guard = () if user.subscribed else (DailyUsage.count < FREE_DAILY_LIMIT,)
 
     result = await db.execute(
@@ -292,7 +294,7 @@ async def annotate(
                     }
                 }) + "\n\n"
             )
-        except Exception as e:
+        except Exception:
             # If nothing was streamed, the user effectively got no answer.
             # Refund the slot and signal a retriable error to the client.
             logger.exception("openai stream failed user=%s first_token=%s", user_id, first_token_at is not None)
@@ -335,7 +337,7 @@ async def create_checkout(user: ExtensionUser = Depends(get_extension_user)):
         )
         return {"url": session.url}
     except stripe.StripeError as e:
-        raise HTTPException(status_code=500, detail=str(e.user_message or e))
+        raise HTTPException(status_code=500, detail=str(e.user_message or e)) from e
 
 
 @router.post("/manage-subscription")
@@ -354,7 +356,7 @@ async def manage_subscription(user: ExtensionUser = Depends(get_extension_user))
         )
         return {"url": session.url}
     except stripe.StripeError as e:
-        raise HTTPException(status_code=500, detail=str(e.user_message or e))
+        raise HTTPException(status_code=500, detail=str(e.user_message or e)) from e
 
 
 def _branded_page(*, icon: str, icon_color: str, title: str, body: str, auto_close: bool) -> str:
@@ -489,7 +491,9 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         # AttributeError. Plain dicts keep the handler simple.
         stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+        # Don't include the underlying exception — Stripe lib's error text can
+        # leak signature/key fragments.
+        raise HTTPException(status_code=400, detail="Invalid webhook signature") from None
 
     event = json.loads(payload)
     etype = event["type"]
@@ -543,7 +547,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         if user:
             user.subscribed = False
             if user.cancelled_at is None:
-                user.cancelled_at = datetime.now(timezone.utc)
+                user.cancelled_at = datetime.now(UTC)
             await db.commit()
 
     elif etype == "invoice.payment_failed":
@@ -563,7 +567,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             if now_active:
                 user.cancelled_at = None
             elif status in ("canceled", "paused", "incomplete_expired") and user.cancelled_at is None:
-                user.cancelled_at = datetime.now(timezone.utc)
+                user.cancelled_at = datetime.now(UTC)
             await db.commit()
 
     return {"ok": True}
@@ -706,15 +710,15 @@ async def purge_old_data(db: AsyncSession):
          RETENTION_DAYS since cancellation — the policy promise that subscriber
          emails are deleted within 30 days of cancellation.
     """
-    cutoff_usage = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d")
+    cutoff_usage = (datetime.now(UTC) - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d")
     await db.execute(delete(DailyUsage).where(DailyUsage.date < cutoff_usage))
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+    cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
 
     # Class 2: free + unidentified + inactive
     await db.execute(
         delete(ExtensionUser).where(
-            ExtensionUser.subscribed == False,
+            ExtensionUser.subscribed == False,  # noqa: E712 — SQLAlchemy column comparison, `not col` would evaluate in Python
             ExtensionUser.email == "",
             ExtensionUser.cancelled_at.is_(None),
             ExtensionUser.created_at < cutoff,
