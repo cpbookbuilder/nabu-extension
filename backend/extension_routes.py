@@ -129,9 +129,11 @@ async def register(req: RegisterRequest, request: Request, db: AsyncSession = De
         # Only rate-limit actual new registrations (not token refreshes for existing devices)
         client_ip = request.client.host if request.client else "unknown"
         check_rate_limit(f"register:{client_ip}", max_calls=10, window_seconds=3600)
-        user = ExtensionUser(id=req.device_id, email="")
+        user = ExtensionUser(id=req.device_id, email="", last_seen_at=datetime.now(UTC))
         db.add(user)
         await db.commit()
+    else:
+        user.last_seen_at = datetime.now(UTC)
     usage = await get_or_create_usage(db, user.id)
     await db.commit()
     return {
@@ -149,6 +151,7 @@ async def get_usage(
     user: ExtensionUser = Depends(get_extension_user),
     db: AsyncSession = Depends(get_db),
 ):
+    user.last_seen_at = datetime.now(UTC)
     usage = await get_or_create_usage(db, user.id)
     await db.commit()
     return {
@@ -231,8 +234,10 @@ async def annotate(
                 detail=f"Free limit of {FREE_DAILY_LIMIT} questions/day reached. Upgrade for unlimited access.",
             )
         usage.count += 1
+        user.last_seen_at = datetime.now(UTC)
         await db.commit()
     else:
+        user.last_seen_at = datetime.now(UTC)
         await db.commit()
 
     # Capture primitives — the request session/user may not be safe to touch
@@ -595,63 +600,165 @@ class RestoreRequest(BaseModel):
         return v
 
 
-# Constant-time response to prevent email enumeration
-_RESTORE_GENERIC = "If an active subscription exists for this email, it has been restored."
+# Two-step restore: avoids the email-only takeover the old flow allowed.
+#
+#   Step 1: POST /restore {email, device_id}
+#     - Look up Stripe customer by email.
+#     - If a billable subscription exists, sign a short-lived ticket that
+#       binds (device_id, customer_id) and return a Stripe Customer Portal
+#       URL with our /restore-complete endpoint as the return_url.
+#   Step 2: User authenticates with Stripe (email-link OTP → portal session
+#     → redirect back to /restore-complete?ticket=...).
+#   Step 3: /restore-complete validates the ticket, re-verifies the
+#     subscription is still live, transfers entitlement to device_id,
+#     and shows a success page.
+#
+# The only way to redeem a ticket is via Stripe's auth, so the attacker can
+# no longer move Pro entitlement just by knowing an email.
+
+_RESTORE_GENERIC = "If a subscription exists for this email, you'll receive a verification link."
+RESTORE_TICKET_TTL_MIN = 15
+_BILLABLE_STATES = {"active", "trialing", "past_due", "unpaid"}
+
 
 @router.post("/restore")
 async def restore(req: RestoreRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    # Rate limit: 5 restore attempts per IP per hour
+    # Rate limit: 5 restore attempts per IP per hour. Without Stripe, restore
+    # can't safely verify ownership, so degrade to a clear "unavailable" state.
     client_ip = request.client.host if request.client else "unknown"
     check_rate_limit(f"restore:{client_ip}", max_calls=5, window_seconds=3600)
 
-    result = await db.execute(
-        select(ExtensionUser).where(ExtensionUser.email == req.email)
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Restore is temporarily unavailable.")
+
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        customers = stripe.Customer.list(email=req.email, limit=10).data
+    except stripe.StripeError:
+        logger.exception("restore: stripe customer lookup failed")
+        return {"message": _RESTORE_GENERIC}
+
+    target_customer = None
+    for c in customers:
+        try:
+            subs = stripe.Subscription.list(customer=c.id, status="all", limit=10)
+            if any(s.status in _BILLABLE_STATES for s in subs.data):
+                target_customer = c
+                break
+        except stripe.StripeError:
+            continue
+
+    if not target_customer:
+        # Generic response. The portal URL is the only signal of existence,
+        # so we don't return one here. Combined with the per-IP rate limit
+        # this leaves enumeration meaningfully bounded.
+        return {"message": _RESTORE_GENERIC}
+
+    ticket = jwt.encode(
+        {
+            "type": "restore",
+            "device_id": req.device_id,
+            "customer_id": target_customer.id,
+            "exp": datetime.now(UTC) + timedelta(minutes=RESTORE_TICKET_TTL_MIN),
+        },
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
     )
-    source_user = result.scalar_one_or_none()
-
-    # Always return the same response to prevent email enumeration
-    if not source_user or not source_user.subscribed:
-        return {"message": _RESTORE_GENERIC, "restored": False}
-
-    # If the new device is the same as the source, just return a fresh token
-    if source_user.id == req.device_id:
-        return {
-            "message": _RESTORE_GENERIC,
-            "restored": True,
-            "token": make_token(req.device_id),
-        }
-
-    # Check if target device already exists — if so, transfer subscription to it
-    target_result = await db.execute(
-        select(ExtensionUser).where(ExtensionUser.id == req.device_id)
-    )
-    target_user = target_result.scalar_one_or_none()
-
-    if target_user:
-        target_user.subscribed = True
-        target_user.email = source_user.email
-        target_user.stripe_customer_id = source_user.stripe_customer_id
-    else:
-        target_user = ExtensionUser(
-            id=req.device_id,
-            email=source_user.email,
-            subscribed=True,
-            stripe_customer_id=source_user.stripe_customer_id,
+    return_url = f"{BACKEND_URL}/api/extension/restore-complete?ticket={ticket}"
+    try:
+        portal = stripe.billing_portal.Session.create(
+            customer=target_customer.id,
+            return_url=return_url,
         )
-        db.add(target_user)
+    except stripe.StripeError as e:
+        raise HTTPException(status_code=500, detail=str(e.user_message or e)) from e
 
-    # Detach subscription from the source device (don't delete — preserves usage history,
-    # avoids FK violations on DailyUsage rows)
-    source_user.subscribed = False
-    source_user.email = ""
-    source_user.stripe_customer_id = None
+    return {
+        "message": "Open the verification link to complete restore.",
+        "verify_url": portal.url,
+    }
+
+
+@router.get("/restore-complete", response_class=HTMLResponse, include_in_schema=False)
+async def restore_complete(ticket: str, db: AsyncSession = Depends(get_db)):
+    """Stripe redirects here after the user authenticates in the Customer
+    Portal. The ticket bound device_id↔customer_id; Stripe proved email
+    ownership; we re-verify subscription status server-side, then transfer
+    entitlement to the device.
+    """
+    try:
+        claims = jwt.decode(ticket, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if claims.get("type") != "restore":
+            raise ValueError("wrong ticket type")
+        device_id = claims["device_id"]
+        customer_id = claims["customer_id"]
+    except Exception:
+        logger.warning("restore-complete: invalid or expired ticket")
+        return _branded_page(
+            icon="✗", icon_color="#a13b3b",
+            title="Verification link expired or invalid",
+            body="Open the extension and try Restore purchase again.",
+            auto_close=False,
+        )
+
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Restore unavailable.")
+    stripe.api_key = STRIPE_SECRET_KEY
+    try:
+        subs = stripe.Subscription.list(customer=customer_id, status="all", limit=10)
+        billable = [s for s in subs.data if s.status in _BILLABLE_STATES]
+        customer = stripe.Customer.retrieve(customer_id)
+    except stripe.StripeError:
+        logger.exception("restore-complete: stripe lookup failed")
+        return _branded_page(
+            icon="!", icon_color="#b06000",
+            title="Couldn't verify with Stripe",
+            body="Please try again in a moment.",
+            auto_close=False,
+        )
+
+    if not billable:
+        return _branded_page(
+            icon="✗", icon_color="#a13b3b",
+            title="No active subscription found",
+            body="If you believe this is a mistake, email nabu.extension@gmail.com.",
+            auto_close=False,
+        )
+
+    email = (getattr(customer, "email", "") or "").lower().strip()
+
+    # Detach Pro from any *other* local user mapped to this Stripe customer
+    # so a single paid subscription doesn't power two devices.
+    await db.execute(
+        update(ExtensionUser)
+        .where(ExtensionUser.stripe_customer_id == customer_id, ExtensionUser.id != device_id)
+        .values(subscribed=False, email="", stripe_customer_id=None)
+    )
+
+    target = (await db.execute(
+        select(ExtensionUser).where(ExtensionUser.id == device_id)
+    )).scalar_one_or_none()
+    now = datetime.now(UTC)
+    if target:
+        target.subscribed = True
+        target.email = email
+        target.stripe_customer_id = customer_id
+        target.cancelled_at = None
+        target.last_seen_at = now
+    else:
+        db.add(ExtensionUser(
+            id=device_id, email=email, subscribed=True,
+            stripe_customer_id=customer_id, last_seen_at=now,
+        ))
 
     await db.commit()
-    return {
-        "message": _RESTORE_GENERIC,
-        "restored": True,
-        "token": make_token(req.device_id),
-    }
+
+    return _branded_page(
+        icon="✓", icon_color="#0f9d58",
+        title="Pro restored on this device",
+        body="You can close this tab and return to the extension. Refresh the popup or dashboard to see Pro status.",
+        auto_close=True,
+    )
 
 
 # ── Right to erasure (GDPR Art. 17) ───────────────────────────────────────
@@ -674,9 +781,15 @@ async def delete_account(
     if user.stripe_customer_id and STRIPE_SECRET_KEY:
         stripe.api_key = STRIPE_SECRET_KEY
         try:
-            subs = stripe.Subscription.list(customer=user.stripe_customer_id, status="active", limit=10)
+            # Cancel every still-billable subscription, not just `status="active"`.
+            # Trialing/past_due/unpaid/incomplete/paused can all generate future
+            # charges or remain attached to the customer record after deletion.
+            # Terminal states (canceled, incomplete_expired) are skipped.
+            CANCELLABLE = {"trialing", "active", "past_due", "unpaid", "incomplete", "paused"}
+            subs = stripe.Subscription.list(customer=user.stripe_customer_id, status="all", limit=100)
             for sub in subs.auto_paging_iter():
-                stripe.Subscription.delete(sub.id)
+                if sub.status in CANCELLABLE:
+                    stripe.Subscription.delete(sub.id)
             stripe_cancelled = True
         except stripe.StripeError:
             # Don't block deletion if Stripe call fails — user still gets DB deletion.
@@ -715,13 +828,17 @@ async def purge_old_data(db: AsyncSession):
 
     cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
 
-    # Class 2: free + unidentified + inactive
+    # Class 2: free + unidentified + inactive (by last_seen_at, not created_at).
+    # Falling back to created_at for legacy rows that haven't been backfilled
+    # makes this safe to roll out before every row has a last_seen_at.
+    from sqlalchemy import func as sa_func
+    inactivity_cutoff = sa_func.coalesce(ExtensionUser.last_seen_at, ExtensionUser.created_at)
     await db.execute(
         delete(ExtensionUser).where(
             ExtensionUser.subscribed == False,  # noqa: E712 — SQLAlchemy column comparison, `not col` would evaluate in Python
             ExtensionUser.email == "",
             ExtensionUser.cancelled_at.is_(None),
-            ExtensionUser.created_at < cutoff,
+            inactivity_cutoff < cutoff,
         )
     )
 

@@ -68,12 +68,20 @@ Identity is a per-install device UUID (no Google OAuth, no Firebase).
 ## 6. Compliance
 
 - **JWT_SECRET** is mandatory (backend raises on startup if absent).
-- **Retention** is 30 days for free, unidentified users — see `purge_old_data()` in
-  `extension_routes.py` and the `_purge_loop` in `main.py` (runs daily).
+- **Retention** is 30 days of inactivity for free, unidentified users (keyed
+  on `last_seen_at`, not `created_at`), and 30 days after cancellation for
+  former subscribers — see `purge_old_data()` in `extension_routes.py` and the
+  `_purge_loop` in `main.py` (runs daily).
 - **Right to erasure** is exposed via `DELETE /api/extension/account` and the
-  "Delete my data" button in the popup. Stripe subscriptions are cancelled as
+  "Delete my data" button in the popup. All non-terminal Stripe subscription
+  states (active/trialing/past_due/unpaid/incomplete/paused) are cancelled as
   part of deletion.
-- **CORS** is restricted to `chrome-extension://*` and the production Railway origin.
+- **CORS** is intentionally `allow_origins=["*"]`. MV3 content scripts inherit
+  the host page's origin (e.g. `https://gemini.google.com`), not
+  `chrome-extension://...`, so restricting CORS to the extension origin would
+  lock the extension out of every webpage. The bearer JWT is the real auth
+  boundary; credentials are off so cookies cannot ride along. See the comment
+  block above `app.add_middleware(CORSMiddleware, ...)` in `main.py`.
 - **Data flow**: extension → backend → OpenAI. Backend processes content in
   transit only; nothing is logged or persisted. Privacy page must always reflect
   this exact flow.

@@ -29,19 +29,26 @@ nabu-extension/
 │   ├── content.css
 │   ├── background.js      # Service worker — device ID generation
 │   ├── popup.html/js      # Extension popup — usage, upgrade, restore
-│   ├── history.html/js    # Full thread history page
+│   ├── dashboard.html/js  # Full-page dashboard — account, threads, todos, saved
 │   ├── katex.min.js       # Bundled KaTeX (equation rendering)
 │   └── icons/             # Extension icons (16/32/48/128px)
 ├── backend/               # FastAPI backend
 │   ├── main.py
-│   ├── extension_routes.py  # Auth, usage tracking, annotate proxy, Stripe
+│   ├── extension_routes.py  # Auth, usage tracking, annotate proxy, Stripe, restore
+│   ├── admin_routes.py      # /admin metrics dashboard (basic-auth gated)
 │   ├── pages_routes.py      # Landing page + privacy policy
 │   ├── db.py / db_models.py
-│   ├── requirements.txt
+│   ├── requirements.txt     # Pinned prod deps
+│   ├── requirements-dev.txt # Test/lint deps
+│   ├── pyproject.toml       # pytest + ruff config
+│   ├── tests/               # pytest suite (extension routes)
 │   └── static/
 │       ├── nabu.zip           # Extension download
 │       ├── icon128.png
 │       └── screenshots/       # Landing page screenshots
+├── .github/workflows/     # CI: backend.yml, frontend.yml, release.yml
+├── DEVELOPMENT.md         # Contributor guide (PR flow, releases, Railway)
+├── CHANGELOG.md           # Extension release notes
 ├── TODO.md                # Pending tasks before launch
 ├── PRODUCTION.md          # Full deployment checklist
 └── README.md

@@ -33,8 +33,12 @@
 
   // ── Storage helpers ────────────────────────────────────────────────────────
 
-  function pageKey() {
-    return 'threads:' + location.href.split('#')[0];
+  // pageKey/saveThreads/updateHistoryIndex all accept an optional URL so the
+  // SPA route-change handler can flush against the OLD url before location
+  // changes (otherwise the pending debounced save fires after navigation and
+  // writes the old route's threads under the new route's key — data corruption).
+  function pageKey(url = location.href) {
+    return 'threads:' + url.split('#')[0];
   }
 
   function makeThreadId() {
@@ -43,10 +47,18 @@
 
   function scheduleSave() {
     clearTimeout(_saveTimer);
-    _saveTimer = setTimeout(saveThreads, 800);
+    _saveTimer = setTimeout(() => saveThreads(), 800);
   }
 
-  async function saveThreads() {
+  // Immediate (non-debounced) save. Used by the pagehide / route-change
+  // paths to drain in-flight edits before the page unloads or the URL key
+  // shifts under us. Always pass the URL the data belongs to.
+  async function flushSave(url) {
+    clearTimeout(_saveTimer);
+    await saveThreads(url);
+  }
+
+  async function saveThreads(url = location.href) {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const records = [...threads.values()]
       .filter(t => t.id && t.messages.length > 0)
@@ -62,16 +74,16 @@
       .filter(r => r.savedAt > cutoff);
 
     try {
-      await chrome.storage.local.set({ [pageKey()]: records });
+      await chrome.storage.local.set({ [pageKey(url)]: records });
     } catch (_) {}
 
-    await updateHistoryIndex(records);
+    await updateHistoryIndex(records, url);
   }
 
-  async function updateHistoryIndex(records) {
+  async function updateHistoryIndex(records, urlArg = location.href) {
     try {
       const { history: existing = [] } = await chrome.storage.local.get('history');
-      const url = location.href.split('#')[0];
+      const url = urlArg.split('#')[0];
       const thisPage = records.map(r => ({
         id: r.id,
         url,
@@ -250,8 +262,14 @@
     let _lastUrl = location.href;
     function _onLocationChange() {
       if (location.href === _lastUrl) return;
+      const oldUrl = _lastUrl;
       _lastUrl = location.href;
-      for (const id of [...threads.keys()]) closeThread(id);
+      // Flush in-memory threads against the OLD url BEFORE we tear them down
+      // and the page key shifts. Without this, the pending debounced save
+      // fires after navigation and the old route's data lands under the new
+      // route's bucket (data corruption + loss).
+      flushSave(oldUrl);
+      for (const id of [...threads.keys()]) closeThread(id, { skipSave: true });
       _pendingRecords = [];
       setTimeout(restoreThreads, 600);
     }
@@ -265,6 +283,10 @@
         return ret;
       };
     }
+    // pagehide is the reliable unload signal on modern browsers (works on
+    // bfcache evictions; beforeunload doesn't fire on Safari/iOS).
+    // Sync flush guarantees the debounced save lands before tab close / nav.
+    window.addEventListener('pagehide', () => { flushSave(location.href); });
     restoreThreads();
 
     chrome.runtime.onMessage.addListener((msg) => {
@@ -564,14 +586,16 @@
     }
   }
 
-  function closeThread(id) {
+  function closeThread(id, opts = {}) {
     const thread = threads.get(id);
     if (!thread) return;
     thread.abortCtrl?.abort();
     thread.card.remove();
     removeHighlight(thread.highlightSpan);
     threads.delete(id);
-    scheduleSave();
+    // skipSave: caller has already flushed (route-change tears down threads
+    // against the OLD url, then closes them — no extra save needed).
+    if (!opts.skipSave) scheduleSave();
   }
 
   function positionCard(thread) {

@@ -329,7 +329,11 @@ async def privacy():
     <p>Device IDs and usage counts are retained for 30 days of inactivity, then deleted. Email addresses for Pro subscribers are retained for the duration of the subscription and deleted within 30 days of cancellation.</p>
 
     <h2>Your rights</h2>
-    <p>You can request deletion of your data at any time by emailing us. We will delete your device ID, usage history, and email address within 7 days.</p>
+    <p>You can delete your data at any time. There are two paths:</p>
+    <ul>
+      <li><strong>In-extension (immediate)</strong> — open the popup or dashboard, click "Delete my data". Your device record, usage history, email (Pro only), and any active Stripe subscription are removed within seconds.</li>
+      <li><strong>By email (up to 7 days)</strong> — email <a href="mailto:nabu.extension@gmail.com">nabu.extension@gmail.com</a> if you cannot use the extension (e.g., uninstalled it). We will manually delete your device ID, usage history, and email address within 7 days.</li>
+    </ul>
 
     <h2>Contact</h2>
     <p>Questions about this policy? Email us at <a href="mailto:nabu.extension@gmail.com">nabu.extension@gmail.com</a></p>
