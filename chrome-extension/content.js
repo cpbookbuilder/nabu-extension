@@ -174,6 +174,31 @@
     }
   }
 
+  // Sites like Gemini and ChatGPT replace the chat content when the user
+  // clicks "New chat" — sometimes without changing the URL, so the SPA
+  // route handler doesn't fire and orphan cards linger over the new chat.
+  // When a thread's anchor element AND its anchor text both vanish from the
+  // page for two consecutive recheck cycles (>1.2s), close the visible card.
+  // The two-strike rule rides out transient React unmounts where the same
+  // content remounts a frame later.
+  //
+  // skipSave: true — the per-URL bucket already has this thread from the
+  // last debounced save, and we don't want to write the smaller set after a
+  // transient close. The thread re-restores when the user navigates back.
+  function pruneOrphanedThreads() {
+    for (const thread of threads.values()) {
+      const anchorAlive = thread.p?.isConnected || !!findAnchorElement(thread.anchor || '');
+      if (anchorAlive) {
+        thread._orphanStrikes = 0;
+        continue;
+      }
+      thread._orphanStrikes = (thread._orphanStrikes || 0) + 1;
+      if (thread._orphanStrikes >= 2) {
+        closeThread(thread.id, { skipSave: true });
+      }
+    }
+  }
+
   function findAnchorElement(anchor) {
     const needle = anchor.slice(0, 80).replace(/\s+/g, ' ').trim();
     for (const p of document.querySelectorAll('[data-a-tagged]')) {
@@ -315,9 +340,14 @@
         }
       }
       if (attached && _pendingRecords.length) tryRestore(0);
-      // Debounced recheck: reapply any highlights that Gemini's re-render removed
+      // Debounced recheck: reapply any highlights that Gemini's re-render
+      // removed, and prune cards whose anchor content has been swapped out
+      // (new-chat click on Gemini/ChatGPT, route changes that don't touch URL).
       clearTimeout(_recheckTimer);
-      _recheckTimer = setTimeout(recheckHighlights, 600);
+      _recheckTimer = setTimeout(() => {
+        recheckHighlights();
+        pruneOrphanedThreads();
+      }, 600);
     });
     obs.observe(document.body, { childList: true, subtree: true });
   }
