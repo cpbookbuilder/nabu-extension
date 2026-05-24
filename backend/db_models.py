@@ -19,6 +19,9 @@ class ExtensionUser(Base):
     # Set when a subscription is cancelled/paused; cleared when reactivated.
     # Used by purge_old_data to honour the published "30 days after cancellation" policy.
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Bumped on register/usage/annotate. Drives the 30-day inactivity purge so
+    # active users aren't deleted just because their account is old.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DailyUsage(Base):

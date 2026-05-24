@@ -139,6 +139,10 @@ async function upgrade() {
 // ── Restore purchase ───────────────────────────────────────────────────────
 
 async function restore() {
+  // New flow (post-2026-05-23): restore is two-step. Step 1 returns a Stripe
+  // Customer Portal URL — Stripe verifies the email via OTP, then redirects to
+  // our /restore-complete which transfers Pro to this device. We never see the
+  // OTP; we trust Stripe's auth as proof of email ownership.
   const email = document.getElementById('restore-email').value.trim();
   const msg = document.getElementById('restore-msg');
   if (!email) return;
@@ -155,16 +159,15 @@ async function restore() {
       body: JSON.stringify({ email, device_id }),
     });
     const data = await res.json();
-    if (!res.ok || !data.restored) {
-      msg.textContent = 'If a subscription exists for this email, it has been restored.';
+    if (res.ok && data.verify_url) {
+      chrome.tabs.create({ url: data.verify_url });
+      msg.innerHTML = 'Opened the verification link in a new tab. After you finish in Stripe, refresh this popup.';
       msg.style.color = '#9aa0a6';
       return;
     }
-    await chrome.storage.local.set({ annotate_jwt: data.token });
-    msg.textContent = '✓ Subscription restored!';
-    msg.style.color = '#81c995';
-    document.getElementById('restore-form').style.display = 'none';
-    loadUsage();
+    // Generic response — either no match, or service unavailable.
+    msg.textContent = data.message || 'If a subscription exists for this email, you\'ll receive a verification link.';
+    msg.style.color = '#9aa0a6';
   } catch (_) {
     msg.textContent = 'Something went wrong. Try again.';
     msg.style.color = '#f28b82';

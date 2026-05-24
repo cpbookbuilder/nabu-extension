@@ -26,8 +26,13 @@ async def create_tables():
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Idempotent backfill for the (user_id, date) uniqueness constraint added
-        # after the table already shipped without it.
+        # Postgres-only idempotent backfills for live deploys. SQLite (used in
+        # tests) gets the columns via metadata.create_all above and doesn't
+        # support the DDL forms below.
+        if conn.dialect.name != "postgresql":
+            return
+
+        # (user_id, date) uniqueness constraint added after the table shipped.
         await conn.execute(text("""
             DO $$
             BEGIN
@@ -45,8 +50,17 @@ async def create_tables():
                 END IF;
             END $$;
         """))
-        # Idempotent backfill for cancelled_at column on tables that pre-date it.
+        # cancelled_at column on tables that pre-date it.
         await conn.execute(text(
             "ALTER TABLE extension_users "
             "ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP WITH TIME ZONE"
+        ))
+        # last_seen_at column for activity-based retention. Backfill from
+        # created_at so existing free users aren't immediately purged.
+        await conn.execute(text(
+            "ALTER TABLE extension_users "
+            "ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE"
+        ))
+        await conn.execute(text(
+            "UPDATE extension_users SET last_seen_at = created_at WHERE last_seen_at IS NULL"
         ))

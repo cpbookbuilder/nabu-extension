@@ -102,6 +102,10 @@ async function manageSubscription() {
 }
 
 async function restore() {
+  // Two-step flow: backend returns a Stripe Customer Portal URL we open in a
+  // new tab. Stripe verifies the email; our /restore-complete transfers Pro.
+  // No client-side token swap — the device's existing JWT just starts seeing
+  // subscribed=true once /restore-complete commits.
   const email = document.getElementById('restore-email').value.trim();
   const msg = document.getElementById('restore-msg');
   if (!email) return;
@@ -115,15 +119,14 @@ async function restore() {
       body: JSON.stringify({ email, device_id }),
     });
     const data = await res.json();
-    if (!res.ok || !data.restored) {
-      msg.textContent = 'If a subscription exists for this email, it has been restored.';
+    if (res.ok && data.verify_url) {
+      chrome.tabs.create({ url: data.verify_url });
+      msg.textContent = 'Opened the verification link in a new tab. After you finish in Stripe, refresh this page.';
       msg.style.color = '#9aa0a6';
       return;
     }
-    await chrome.storage.local.set({ annotate_jwt: data.token });
-    msg.textContent = '✓ Subscription restored!';
-    msg.style.color = '#81c995';
-    loadAccount();
+    msg.textContent = data.message || 'If a subscription exists for this email, you\'ll receive a verification link.';
+    msg.style.color = '#9aa0a6';
   } catch (_) {
     msg.textContent = 'Something went wrong. Try again.';
     msg.style.color = '#f28b82';

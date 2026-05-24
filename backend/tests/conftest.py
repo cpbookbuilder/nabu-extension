@@ -21,6 +21,11 @@ if _db_path.exists():
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_db_path}")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use-in-prod")
 os.environ.setdefault("OPENAI_API_KEY", "test-api-key")
+# Dummy Stripe key so restore/delete flows can exercise the Stripe-aware
+# branches under monkeypatched `stripe.*` modules. Tests that need to assert
+# the "no Stripe configured" branch monkeypatch STRIPE_SECRET_KEY back to "".
+os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_dummy")
+os.environ.setdefault("BACKEND_URL", "http://test")
 
 # 2) Make backend/ importable when pytest is invoked from repo root.
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -45,6 +50,16 @@ async def _reset_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """The in-memory `_rate_buckets` dict in extension_routes is process-global,
+    so without a reset the test client's "IP" exhausts the per-IP register
+    quota a few tests into the run. Clear before every test."""
+    import extension_routes as er
+    er._rate_buckets.clear()
     yield
 
 
