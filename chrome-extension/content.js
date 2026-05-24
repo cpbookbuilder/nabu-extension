@@ -5,7 +5,7 @@
   let colorIdx = 0;
   let popoverTimer = null;
   let popoverAutoHideTimer = null;
-  const POPOVER_AUTO_HIDE_MS = 5000;
+  const POPOVER_AUTO_HIDE_MS = 3000;
   let _saveTimer = null;
   const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist';
   let _katexCss = null;
