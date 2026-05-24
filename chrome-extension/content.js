@@ -4,6 +4,8 @@
   const COLORS = ['#1a73e8', '#0f9d58', '#f29900', '#a142f4'];
   let colorIdx = 0;
   let popoverTimer = null;
+  let popoverAutoHideTimer = null;
+  const POPOVER_AUTO_HIDE_MS = 5000;
   let _saveTimer = null;
   const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist';
   let _katexCss = null;
@@ -437,6 +439,18 @@
     `;
     document.body.appendChild(div);
 
+    // Auto-dismiss if the user doesn't engage within 5s — fixes the case
+    // where a double-click to select/copy a word leaves the popover hanging
+    // until manually closed. Hovering the popover cancels the timer; moving
+    // the mouse away restarts it.
+    const startAutoHide = () => {
+      clearTimeout(popoverAutoHideTimer);
+      popoverAutoHideTimer = setTimeout(removePopover, POPOVER_AUTO_HIDE_MS);
+    };
+    startAutoHide();
+    div.addEventListener('mouseenter', () => clearTimeout(popoverAutoHideTimer));
+    div.addEventListener('mouseleave', startAutoHide);
+
     const pRect = anchorEl.getBoundingClientRect();
     const selectionOffset = Math.max(0, rect.top - pRect.top);
 
@@ -519,6 +533,7 @@
   }
 
   function removePopover() {
+    clearTimeout(popoverAutoHideTimer);
     document.getElementById('annotate-popover')?.remove();
   }
 
