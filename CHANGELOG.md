@@ -19,6 +19,13 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.2.1] — 2026-05-24
+
+### Fixed
+- Selection popover now auto-dismisses after 5 seconds of no interaction, so double-clicking a word to read or copy it no longer leaves a panel hanging on the page. Hovering the popover pauses the timer.
+
+---
+
 ## [v1.2.0] — 2026-05-24
 
 ### Added
