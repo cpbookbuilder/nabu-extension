@@ -19,10 +19,17 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.2.2] — 2026-05-24
+
+### Changed
+- Selection popover auto-dismiss timeout tuned from 5s → 3s. The 5s value left the panel hanging long enough to still feel intrusive after a double-click.
+
+---
+
 ## [v1.2.1] — 2026-05-24
 
 ### Fixed
-- Selection popover now auto-dismisses after 3 seconds of no interaction, so double-clicking a word to read or copy it no longer leaves a panel hanging on the page. Hovering the popover pauses the timer.
+- Selection popover now auto-dismisses after 5 seconds of no interaction, so double-clicking a word to read or copy it no longer leaves a panel hanging on the page. Hovering the popover pauses the timer.
 
 ---
 
