@@ -1,34 +1,3 @@
-/* Floating thread button — single instance, positioned via JS, never inserted into page DOM */
-#annotate-floating-btn {
-  display: none;
-  position: fixed;
-  width: 20px;
-  height: 20px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #9aa0a6;
-  padding: 1px;
-  border-radius: 4px;
-  line-height: 1;
-  z-index: 2147483646;
-  align-items: center;
-  justify-content: center;
-  transform: translateY(-50%);
-}
-#annotate-floating-btn.visible {
-  display: flex;
-}
-#annotate-floating-btn:hover {
-  color: #1a73e8;
-  background: rgba(26, 115, 232, 0.08);
-}
-#annotate-floating-btn svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
 /* Selection popover */
 #annotate-popover {
   position: absolute;
