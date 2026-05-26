@@ -185,10 +185,17 @@
   // skipSave: true — the per-URL bucket already has this thread from the
   // last debounced save, and we don't want to write the smaller set after a
   // transient close. The thread re-restores when the user navigates back.
+  function _isVisible(el) {
+    // An element hidden by CSS (display:none on a parent — ChatGPT does this
+    // when navigating away from a chat) stays isConnected=true. Check both.
+    if (!el || !el.isConnected) return false;
+    return el.offsetParent !== null || el.getClientRects().length > 0;
+  }
+
   function pruneOrphanedThreads() {
     for (const thread of threads.values()) {
-      const anchorAlive = thread.p?.isConnected || !!findAnchorElement(thread.anchor || '');
-      if (anchorAlive) {
+      const anchorVisible = _isVisible(thread.p) || !!findAnchorElement(thread.anchor || '');
+      if (anchorVisible) {
         thread._orphanStrikes = 0;
         continue;
       }
@@ -314,6 +321,11 @@
     // bfcache evictions; beforeunload doesn't fire on Safari/iOS).
     // Sync flush guarantees the debounced save lands before tab close / nav.
     window.addEventListener('pagehide', () => { flushSave(location.href); });
+    // Periodic orphan check: catches cards whose anchors were hidden (not
+    // removed — so MutationObserver doesn't fire) or where navigation used
+    // the Navigation API which our pushState patch can't intercept. With the
+    // 2-strike heuristic, a hidden anchor gets ~6s before the card closes.
+    setInterval(pruneOrphanedThreads, 3000);
     restoreThreads();
 
     chrome.runtime.onMessage.addListener((msg) => {
