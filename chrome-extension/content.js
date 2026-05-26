@@ -296,14 +296,8 @@
     let _lastUrl = location.href;
     function _onLocationChange() {
       if (location.href === _lastUrl) return;
-      const oldUrl = _lastUrl;
       _lastUrl = location.href;
-      // Flush in-memory threads against the OLD url BEFORE we tear them down
-      // and the page key shifts. Without this, the pending debounced save
-      // fires after navigation and the old route's data lands under the new
-      // route's bucket (data corruption + loss).
-      flushSave(oldUrl);
-      for (const id of [...threads.keys()]) closeThread(id, { skipSave: true });
+      for (const id of [...threads.keys()]) closeThread(id);
       _pendingRecords = [];
       setTimeout(restoreThreads, 600);
     }
