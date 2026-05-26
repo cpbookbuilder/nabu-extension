@@ -321,10 +321,17 @@
     // bfcache evictions; beforeunload doesn't fire on Safari/iOS).
     // Sync flush guarantees the debounced save lands before tab close / nav.
     window.addEventListener('pagehide', () => { flushSave(location.href); });
+    // URL-change polling: catches navigations our pushState/replaceState
+    // patch misses — Next.js (ChatGPT) can replace the history API AFTER
+    // our content script patches it, and the Navigation API bypasses
+    // pushState entirely. A 1s string comparison is cheap and bulletproof.
+    setInterval(() => {
+      if (location.href !== _lastUrl) _onLocationChange();
+    }, 1000);
     // Periodic orphan check: catches cards whose anchors were hidden (not
-    // removed — so MutationObserver doesn't fire) or where navigation used
-    // the Navigation API which our pushState patch can't intercept. With the
-    // 2-strike heuristic, a hidden anchor gets ~6s before the card closes.
+    // removed — so MutationObserver doesn't fire) or where the content
+    // swapped without a URL change. With the 2-strike heuristic, a hidden
+    // anchor closes ~6s after disappearing.
     setInterval(pruneOrphanedThreads, 3000);
     restoreThreads();
 
