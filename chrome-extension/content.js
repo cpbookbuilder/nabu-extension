@@ -285,7 +285,6 @@
       } catch (_) {}
       return;
     }
-    initFloatingBtn();
     watchForResponses();
     document.addEventListener('mouseup', onMouseUp, { capture: true });
     document.addEventListener('scroll', () => requestAnimationFrame(repositionAll), { passive: true, capture: true });
@@ -365,57 +364,13 @@
     obs.observe(document.body, { childList: true, subtree: true });
   }
 
-  // Single floating button — avoids inserting into page DOM (breaks React hydration on ChatGPT etc.)
-  let _floatingBtn = null;
-  let _floatingTarget = null;
-  let _floatingHideTimer = null;
-
-  function initFloatingBtn() {
-    _floatingBtn = document.createElement('button');
-    _floatingBtn.id = 'annotate-floating-btn';
-    _floatingBtn.title = 'Start thread';
-    _floatingBtn.tabIndex = -1; // never steal focus via tab or click
-    _floatingBtn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor">
-      <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v7a2 2 0 01-2 2H6l-4 4V5z"/>
-    </svg>`;
-    _floatingBtn.addEventListener('mouseenter', () => clearTimeout(_floatingHideTimer));
-    _floatingBtn.addEventListener('mouseleave', () => {
-      _floatingHideTimer = setTimeout(_hideFloatingBtn, 300);
-    });
-    _floatingBtn.addEventListener('mousedown', e => e.preventDefault()); // prevent focus steal
-    _floatingBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      if (_floatingTarget?.isConnected) openThread(_floatingTarget, _floatingTarget.textContent.trim(), getPageContext(_floatingTarget));
-      _hideFloatingBtn();
-    });
-    document.body.appendChild(_floatingBtn);
-  }
-
-  function _showFloatingBtn(p) {
-    clearTimeout(_floatingHideTimer);
-    _floatingTarget = p;
-    const rect = p.getBoundingClientRect();
-    // position: fixed so no scroll offset needed
-    _floatingBtn.style.top = `${rect.top + rect.height / 2}px`;
-    _floatingBtn.style.left = `${rect.right + 4}px`;
-    _floatingBtn.classList.add('visible');
-  }
-
-  function _hideFloatingBtn() {
-    _floatingBtn?.classList.remove('visible');
-    _floatingTarget = null;
-  }
-
+  // Tag block elements so findAnchorElement can locate them for thread
+  // restoration. No hover button — threads start via text selection only.
   function attachBtn(p) {
     if (p.dataset.aTagged) return;
     if (isOurShadowDOM(p)) return;
-    // Never touch elements inside editable areas — breaks React input on ChatGPT/Claude etc.
     if (p.closest('[contenteditable], textarea, input')) return;
     p.dataset.aTagged = '1';
-    p.addEventListener('mouseenter', () => _showFloatingBtn(p));
-    p.addEventListener('mouseleave', () => {
-      _floatingHideTimer = setTimeout(_hideFloatingBtn, 300);
-    });
   }
 
   function getPageContext(p) {
