@@ -19,6 +19,14 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.2.3] — 2026-05-26
+
+### Fixed
+- Thread cards now reliably vanish when navigating between pages on ChatGPT, Gemini, and other SPAs. Added a 1s URL-change poll that catches navigations Next.js/Navigation API perform behind the scenes, plus orphan-card pruning for sites that swap content without changing the URL.
+- Reverted the SPA save-race handler that was preventing card cleanup on navigation.
+
+---
+
 ## [v1.2.2] — 2026-05-24
 
 ### Changed
