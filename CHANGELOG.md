@@ -19,6 +19,15 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.2.4] — 2026-05-27
+
+### Changed
+- Removed unused `tabs` permission from manifest (CWS review rejection — all chrome.tabs methods we use work without it).
+- Removed floating paragraph hover button — threads now start via text selection only.
+- API messages sent to backend are logged to browser console (DevTools → Console) for debugging context issues.
+
+---
+
 ## [v1.2.3] — 2026-05-26
 
 ### Fixed
