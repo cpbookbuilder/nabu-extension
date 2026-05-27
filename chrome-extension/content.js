@@ -669,7 +669,11 @@
     thread.abortCtrl = new AbortController();
 
     try {
-      const text = await streamFromBackend(buildApiMessages(thread), msgEl, thread, session.jwt);
+      const apiMessages = buildApiMessages(thread);
+      console.groupCollapsed('[Nabu] API request — %s', q.slice(0, 60));
+      apiMessages.forEach((m, i) => console.log(`[${i}] ${m.role}:`, m.content));
+      console.groupEnd();
+      const text = await streamFromBackend(apiMessages, msgEl, thread, session.jwt);
       await ensureKaTeX();
       injectKaTeXCSS(root);
       msgEl.classList.remove('streaming');
