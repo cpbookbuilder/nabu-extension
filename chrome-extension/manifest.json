@@ -3,7 +3,7 @@
   "name": "Nabu",
   "version": "1.2.3",
   "description": "Anchor AI threads to anything you read. Ask questions, save insights, never lose context.",
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage"],
   "background": { "service_worker": "background.js" },
   "host_permissions": [
     "https://*/*",
