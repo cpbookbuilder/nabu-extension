@@ -6,15 +6,20 @@
   "permissions": ["storage"],
   "background": { "service_worker": "background.js" },
   "host_permissions": [
-    "https://*/*",
-    "http://*/*"
+    "https://*/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://*/*", "http://*/*"],
+      "matches": ["https://*/*"],
       "js": ["katex.min.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["katex.min.css", "fonts/*"],
+      "matches": ["https://*/*"]
     }
   ],
   "icons": {
