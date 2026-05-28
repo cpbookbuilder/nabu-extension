@@ -35,6 +35,13 @@
   let _recheckTimer = null;
 
   const threads = new Map(); // threadId → thread object (thread.p holds the DOM element)
+  const quickMarks = []; // {el, highlightSpan, anchorEl, anchor} for Todo/Save markers
+
+  // Visual config per quick-mark type: highlight bg + side-label text/style.
+  const QUICK_MARK = {
+    todos:     { bg: 'rgba(15, 157, 88, 0.28)',  label: '✓ Added to Todos', color: '#0f9d58' },
+    reminders: { bg: 'rgba(242, 153, 0, 0.30)',  label: '🔖 Saved',         color: '#b06000' },
+  };
 
   // ── Storage helpers ────────────────────────────────────────────────────────
 
@@ -478,14 +485,14 @@
 
     document.getElementById('annotate-todo').addEventListener('click', () => {
       clearTimeout(popoverTimer);
-      saveTodoOrReminder('todos', text, anchorEl);
+      saveTodoOrReminder('todos', text, anchorEl, savedRange);
       removePopover();
       window.getSelection()?.removeAllRanges();
     });
 
     document.getElementById('annotate-remind').addEventListener('click', () => {
       clearTimeout(popoverTimer);
-      saveTodoOrReminder('reminders', text, anchorEl);
+      saveTodoOrReminder('reminders', text, anchorEl, savedRange);
       removePopover();
       window.getSelection()?.removeAllRanges();
     });
@@ -505,7 +512,7 @@
     });
   }
 
-  async function saveTodoOrReminder(type, anchor, anchorEl) {
+  async function saveTodoOrReminder(type, anchor, anchorEl, savedRange) {
     const ctx = getPageContext(anchorEl);
     const entry = {
       id: makeThreadId(),
@@ -520,7 +527,46 @@
       const existing = (await chrome.storage.local.get(type))[type] || [];
       await chrome.storage.local.set({ [type]: [entry, ...existing].slice(0, 500) });
     } catch (_) {}
-    showToast(type === 'todos' ? '✓ Added to todos' : '🔔 Reminder saved');
+    addQuickMarker(type, anchorEl, anchor, savedRange);
+  }
+
+  // Highlights the selected text and pins a small side label ("Added to
+  // Todos" / "Saved") at that vertical position — mirrors the way a question
+  // thread highlights + anchors a card, but lighter weight and dismissable.
+  function addQuickMarker(type, anchorEl, anchor, savedRange) {
+    const cfg = QUICK_MARK[type] || QUICK_MARK.todos;
+    const highlightSpan = highlightAnchorText(anchorEl, anchor, null, savedRange, cfg.bg);
+
+    const el = document.createElement('div');
+    el.className = 'annotate-quickmark';
+    el.style.borderLeftColor = cfg.color;
+    el.innerHTML = `<span class="annotate-quickmark-label"></span><button class="annotate-quickmark-x" title="Dismiss" aria-label="Dismiss">×</button>`;
+    el.querySelector('.annotate-quickmark-label').textContent = cfg.label;
+    el.style.color = cfg.color;
+    document.body.appendChild(el);
+
+    const mark = { el, highlightSpan, anchorEl, anchor };
+    quickMarks.push(mark);
+
+    el.querySelector('.annotate-quickmark-x').addEventListener('click', e => {
+      e.stopPropagation();
+      removeQuickMark(mark);
+    });
+
+    positionQuickMark(mark);
+    resolveCollisions();
+  }
+
+  function removeQuickMark(mark) {
+    mark.el.remove();
+    removeHighlight(mark.highlightSpan);
+    const i = quickMarks.indexOf(mark);
+    if (i !== -1) quickMarks.splice(i, 1);
+  }
+
+  function positionQuickMark(mark) {
+    const live = mark.anchorEl?.isConnected ? mark.anchorEl : findAnchorElement(mark.anchor || '');
+    if (live) mark.el.style.top = `${live.getBoundingClientRect().top}px`;
   }
 
   function showToast(msg) {
@@ -619,22 +665,24 @@
     if (liveP) thread.card.style.top = `${liveP.getBoundingClientRect().top + (thread.selectionOffset || 0)}px`;
   }
 
-  // Push overlapping cards apart so they're all accessible.
+  // Push overlapping cards/markers apart so they're all accessible.
   function resolveCollisions() {
-    const items = [...threads.values()]
-      .map(t => ({ t, top: parseFloat(t.card.style.top) || 0 }))
-      .sort((a, b) => a.top - b.top);
+    const items = [
+      ...[...threads.values()].map(t => ({ el: t.card, top: parseFloat(t.card.style.top) || 0 })),
+      ...quickMarks.map(m => ({ el: m.el, top: parseFloat(m.el.style.top) || 0 })),
+    ].sort((a, b) => a.top - b.top);
     for (let i = 1; i < items.length; i++) {
       const gap = items[i].top - items[i - 1].top;
       if (gap < 48) {
         items[i].top = items[i - 1].top + 48;
-        items[i].t.card.style.top = `${items[i].top}px`;
+        items[i].el.style.top = `${items[i].top}px`;
       }
     }
   }
 
   function repositionAll() {
     for (const thread of threads.values()) positionCard(thread);
+    for (const mark of quickMarks) positionQuickMark(mark);
     resolveCollisions();
   }
 
@@ -877,7 +925,7 @@
 
   // ── Text highlight ─────────────────────────────────────────────────────────
 
-  function highlightAnchorText(p, anchor, color, savedRange) {
+  function highlightAnchorText(p, anchor, color, savedRange, bg) {
     const paraText = p.textContent.replace(/\s+/g, ' ').trim();
     // For short elements (headings, short lines) use a tighter threshold so partial selections get highlighted
     const threshold = paraText.length < 60 ? 0.98 : 0.9;
@@ -896,7 +944,7 @@
 
       const span = document.createElement('span');
       span.className = 'annotate-highlight';
-      span.style.cssText = `background: rgba(255, 214, 0, 0.45); border-radius: 2px; padding: 1px 0;`;
+      span.style.cssText = `background: ${bg || 'rgba(255, 214, 0, 0.45)'}; border-radius: 2px; padding: 1px 0;`;
 
       try {
         range.surroundContents(span);
