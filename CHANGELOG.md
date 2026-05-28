@@ -19,6 +19,21 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.2.5] — 2026-05-28
+
+### Added
+- Adding a selection to Todos or Saved now shows a card matching the question-thread style: the highlighted text in the header and a status label ("✓ Added to Todos" / "🔖 Saved for later") in the body. Clicking × removes the card, the highlight, and the saved item.
+
+### Changed
+- KaTeX CSS and fonts are now bundled in the extension — no third-party CDN requests at runtime. The extension makes requests only to its own backend.
+- Dropped the `http://*/*` host permission (HTTPS-only) to narrow the extension's access footprint.
+- Checkout links now open via the background worker instead of `window.open`.
+
+### Fixed
+- Math/equations now render automatically — the model is instructed to format mathematical notation as LaTeX without being asked.
+
+---
+
 ## [v1.2.4] — 2026-05-27
 
 ### Changed
