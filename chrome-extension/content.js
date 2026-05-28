@@ -788,7 +788,7 @@
     contextBlock += `Specific passage the user is asking about:\n"${anchor}"`;
 
     const msgs = [
-      { role: 'system', content: 'You are a helpful assistant. The user is reading content and wants to ask follow-up questions. Use the provided context to give accurate, focused answers. Be concise.' },
+      { role: 'system', content: 'You are a helpful assistant. The user is reading content and wants to ask follow-up questions. Use the provided context to give accurate, focused answers. Be concise. Always format mathematical notation using LaTeX: wrap inline math in single dollar signs ($...$) and display equations in double dollar signs ($$...$$). Do this whenever a response contains a formula, equation, variable, or mathematical symbol — without being asked.' },
       { role: 'user', content: `${contextBlock}\n\nQuestion: ${thread.messages[0].content}` },
     ];
     for (let i = 1; i < thread.messages.length; i++) msgs.push(thread.messages[i]);
