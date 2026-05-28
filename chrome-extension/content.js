@@ -527,27 +527,29 @@
       const existing = (await chrome.storage.local.get(type))[type] || [];
       await chrome.storage.local.set({ [type]: [entry, ...existing].slice(0, 500) });
     } catch (_) {}
-    addQuickMarker(type, anchorEl, anchor, savedRange);
+    addQuickMarker(type, anchorEl, anchor, savedRange, entry.id);
   }
 
   // Highlights the selected text and pins a small side label ("Added to
   // Todos" / "Saved") at that vertical position — mirrors the way a question
   // thread highlights + anchors a card, but lighter weight and dismissable.
-  function addQuickMarker(type, anchorEl, anchor, savedRange) {
+  function addQuickMarker(type, anchorEl, anchor, savedRange, entryId) {
     const cfg = QUICK_MARK[type] || QUICK_MARK.todos;
     const highlightSpan = highlightAnchorText(anchorEl, anchor, null, savedRange, cfg.bg);
 
     const el = document.createElement('div');
     el.className = 'annotate-quickmark';
     el.style.borderLeftColor = cfg.color;
-    el.innerHTML = `<span class="annotate-quickmark-label"></span><button class="annotate-quickmark-x" title="Dismiss" aria-label="Dismiss">×</button>`;
+    el.innerHTML = `<span class="annotate-quickmark-label"></span><button class="annotate-quickmark-x" title="Remove" aria-label="Remove">×</button>`;
     el.querySelector('.annotate-quickmark-label').textContent = cfg.label;
     el.style.color = cfg.color;
     document.body.appendChild(el);
 
-    const mark = { el, highlightSpan, anchorEl, anchor };
+    const mark = { el, highlightSpan, anchorEl, anchor, type, entryId };
     quickMarks.push(mark);
 
+    // × removes the marker, the highlight, AND the stored Todo/Saved item —
+    // the side box is the undo affordance, mirroring deleting a Todo card.
     el.querySelector('.annotate-quickmark-x').addEventListener('click', e => {
       e.stopPropagation();
       removeQuickMark(mark);
@@ -557,11 +559,17 @@
     resolveCollisions();
   }
 
-  function removeQuickMark(mark) {
+  async function removeQuickMark(mark) {
     mark.el.remove();
     removeHighlight(mark.highlightSpan);
     const i = quickMarks.indexOf(mark);
     if (i !== -1) quickMarks.splice(i, 1);
+    if (mark.entryId && mark.type) {
+      try {
+        const items = (await chrome.storage.local.get(mark.type))[mark.type] || [];
+        await chrome.storage.local.set({ [mark.type]: items.filter(it => it.id !== mark.entryId) });
+      } catch (_) {}
+    }
   }
 
   function positionQuickMark(mark) {
