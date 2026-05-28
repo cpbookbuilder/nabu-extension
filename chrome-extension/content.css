@@ -70,34 +70,5 @@
   z-index: 2147483647;
 }
 
-/* Quick marker — small side label shown when a selection is added to Todos/Saved */
-.annotate-quickmark {
-  position: fixed;
-  right: 16px;
-  z-index: 2147483646;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  border-left: 3px solid #0f9d58;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 2px 8px rgba(0,0,0,.1);
-  padding: 6px 8px 6px 10px;
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.annotate-quickmark-x {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #80868b;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 2px;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-}
-.annotate-quickmark-x:hover {
-  color: #202124;
-}
+/* Quick marker (Todo/Saved) reuses the .annotate-card wrapper above; its
+   visual styling lives in the card's shadow DOM (see buildQuickCard). */

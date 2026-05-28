@@ -39,8 +39,8 @@
 
   // Visual config per quick-mark type: highlight bg + side-label text/style.
   const QUICK_MARK = {
-    todos:     { bg: 'rgba(15, 157, 88, 0.28)',  label: '✓ Added to Todos', color: '#0f9d58' },
-    reminders: { bg: 'rgba(242, 153, 0, 0.30)',  label: '🔖 Saved',         color: '#b06000' },
+    todos:     { bg: 'rgba(15, 157, 88, 0.28)',  label: '✓ Added to Todos',  color: '#0f9d58' },
+    reminders: { bg: 'rgba(242, 153, 0, 0.30)',  label: '🔖 Saved for later', color: '#b06000' },
   };
 
   // ── Storage helpers ────────────────────────────────────────────────────────
@@ -537,26 +537,70 @@
     const cfg = QUICK_MARK[type] || QUICK_MARK.todos;
     const highlightSpan = highlightAnchorText(anchorEl, anchor, null, savedRange, cfg.bg);
 
-    const el = document.createElement('div');
-    el.className = 'annotate-quickmark';
-    el.style.borderLeftColor = cfg.color;
-    el.innerHTML = `<span class="annotate-quickmark-label"></span><button class="annotate-quickmark-x" title="Remove" aria-label="Remove">×</button>`;
-    el.querySelector('.annotate-quickmark-label').textContent = cfg.label;
-    el.style.color = cfg.color;
+    const snippet = anchor.length > 140 ? anchor.slice(0, 140) + '…' : anchor;
+    const el = buildQuickCard(snippet, cfg.color, cfg.label);
     document.body.appendChild(el);
 
     const mark = { el, highlightSpan, anchorEl, anchor, type, entryId };
     quickMarks.push(mark);
 
-    // × removes the marker, the highlight, AND the stored Todo/Saved item —
-    // the side box is the undo affordance, mirroring deleting a Todo card.
-    el.querySelector('.annotate-quickmark-x').addEventListener('click', e => {
+    // × removes the card, the highlight, AND the stored Todo/Saved item —
+    // the box is the undo affordance, mirroring deleting a Todo card.
+    el.shadowRoot.getElementById('close').addEventListener('click', e => {
       e.stopPropagation();
       removeQuickMark(mark);
+    });
+    el.shadowRoot.getElementById('snippet').addEventListener('click', () => {
+      const live = mark.anchorEl?.isConnected ? mark.anchorEl : findAnchorElement(mark.anchor || '');
+      (mark.highlightSpan?.isConnected ? mark.highlightSpan : live)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
 
     positionQuickMark(mark);
     resolveCollisions();
+  }
+
+  // A thread-card lookalike for Todo/Saved markers: same header (colored bar
+  // + snippet of the highlighted text + close), but the body is a single
+  // static status label instead of an AI conversation, and there's no input.
+  function buildQuickCard(snippet, color, label) {
+    const wrap = document.createElement('div');
+    wrap.className = 'annotate-card';
+    const root = wrap.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+      <style>
+        :host {
+          all: initial;
+          font-family: 'Google Sans', Roboto, Arial, sans-serif;
+          font-size: 13px; color: #202124;
+          position: fixed; right: 16px; width: 300px;
+          background: #fff; border-radius: 8px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 4px 12px rgba(0,0,0,.12);
+          display: flex; flex-direction: column;
+          z-index: 2147483647; overflow: hidden;
+        }
+        #header {
+          padding: 10px 10px 8px 12px; border-bottom: 1px solid #e8eaed;
+          display: flex; align-items: flex-start; gap: 8px;
+        }
+        #bar { width: 3px; min-height: 18px; border-radius: 2px; background: ${color}; flex-shrink: 0; margin-top: 1px; align-self: stretch; }
+        #snippet {
+          flex: 1; font-size: 11px; color: #5f6368; line-height: 1.5; cursor: pointer;
+          overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        }
+        #snippet:hover { color: ${color}; }
+        #close { background: none; border: none; cursor: pointer; color: #80868b; font-size: 20px; line-height: 1; padding: 0 2px; flex-shrink: 0; margin-top: -1px; }
+        #close:hover { color: #202124; }
+        #body { padding: 8px 12px; }
+        .label { background: #f8f9fa; border-radius: 8px 8px 8px 2px; padding: 7px 10px; font-size: 13px; font-weight: 600; color: ${color}; display: inline-block; }
+      </style>
+      <div id="header">
+        <div id="bar"></div>
+        <div id="snippet">${escapeHtml(snippet)}</div>
+        <button id="close" title="Remove">×</button>
+      </div>
+      <div id="body"><span class="label">${escapeHtml(label)}</span></div>
+    `;
+    return wrap;
   }
 
   async function removeQuickMark(mark) {
