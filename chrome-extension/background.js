@@ -15,6 +15,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
     return;
   }
+  if (msg.type === 'openUrl') {
+    // Only open https URLs — guards against a malformed/hostile backend
+    // response trying to open javascript:, data:, or file: schemes.
+    try {
+      if (new URL(msg.url).protocol === 'https:') chrome.tabs.create({ url: msg.url });
+    } catch (_) {}
+    return;
+  }
   if (msg.type !== 'openAndScroll') return;
   const { url, threadId } = msg;
 

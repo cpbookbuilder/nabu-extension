@@ -7,15 +7,18 @@
   let popoverAutoHideTimer = null;
   const POPOVER_AUTO_HIDE_MS = 3000;
   let _saveTimer = null;
-  const KATEX_CDN = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist';
   let _katexCss = null;
 
   async function ensureKaTeX() {
     if (_katexCss) return true;
     try {
-      const res = await fetch(`${KATEX_CDN}/katex.min.css`);
+      // CSS + fonts are bundled in the extension package (no remote CDN
+      // fetch). Rewrite the relative font URLs to chrome-extension:// paths
+      // so the shadow-DOM-injected stylesheet resolves them. fonts/* and
+      // katex.min.css are declared in web_accessible_resources.
+      const res = await fetch(chrome.runtime.getURL('katex.min.css'));
       const css = await res.text();
-      _katexCss = css.replace(/url\(fonts\//g, `url(${KATEX_CDN}/fonts/`);
+      _katexCss = css.replace(/url\(fonts\//g, `url(${chrome.runtime.getURL('fonts/')}`);
     } catch (_) {}
     return !!window.katex;
   }
@@ -713,7 +716,10 @@
               return;
             }
             const { url } = await res.json();
-            window.open(url, '_blank');
+            // Open via the background worker (chrome.tabs.create) rather than
+            // window.open from the page context — keeps the content script
+            // from directly opening backend-provided URLs.
+            chrome.runtime.sendMessage({ type: 'openUrl', url });
             upgradeLink.textContent = 'Upgrade for $4.99/mo';
           } catch (err) {
             upgradeLink.textContent = `Error: ${err.message}`;
