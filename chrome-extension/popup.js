@@ -1,4 +1,4 @@
-const BACKEND_URL = 'https://nabu-extension-production.up.railway.app';
+// BACKEND_URL, ensureSession(), and apiFetch() come from session.js (loaded first).
 
 // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -30,18 +30,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ── Usage ──────────────────────────────────────────────────────────────────
 
 async function loadUsage() {
-  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-  if (!annotate_jwt) {
-    document.getElementById('usage-text').textContent = 'Not connected yet — open a page and ask a question.';
-    document.getElementById('btn-upgrade').hidden = true;
-    document.getElementById('upgrade-fineprint').hidden = true;
-    document.getElementById('btn-manage').hidden = true;
-    return;
-  }
   try {
-    const res = await fetch(`${BACKEND_URL}/api/extension/usage`, {
-      headers: { Authorization: `Bearer ${annotate_jwt}` },
-    });
+    // ensureSession (via apiFetch) registers a device + token on demand and
+    // refreshes once on 401, so the popup reflects real state instead of a
+    // stale "not connected" until the user visits a content page.
+    const res = await apiFetch('/api/extension/usage');
     if (!res.ok) return;
     const { count, limit, subscribed, remaining } = await res.json();
 
@@ -78,15 +71,10 @@ async function loadUsage() {
 
 async function manageSubscription() {
   const btn = document.getElementById('btn-manage');
-  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-  if (!annotate_jwt) return;
   btn.disabled = true;
   btn.textContent = 'Opening…';
   try {
-    const res = await fetch(`${BACKEND_URL}/api/extension/manage-subscription`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${annotate_jwt}` },
-    });
+    const res = await apiFetch('/api/extension/manage-subscription', { method: 'POST' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `Server error ${res.status}`);
@@ -107,18 +95,10 @@ async function manageSubscription() {
 async function upgrade() {
   const btn = document.getElementById('btn-upgrade');
   const usageText = document.getElementById('usage-text');
-  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-  if (!annotate_jwt) {
-    if (usageText) usageText.textContent = 'Open any page and ask a question first to activate.';
-    return;
-  }
   btn.textContent = 'Opening checkout…';
   btn.disabled = true;
   try {
-    const res = await fetch(`${BACKEND_URL}/api/extension/create-checkout`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${annotate_jwt}` },
-    });
+    const res = await apiFetch('/api/extension/create-checkout', { method: 'POST' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `Server error ${res.status}`);
