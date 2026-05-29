@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import stripe
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select, update
@@ -600,64 +600,120 @@ class RestoreRequest(BaseModel):
         return v
 
 
-# Two-step restore: avoids the email-only takeover the old flow allowed.
+# Three-step restore. Avoids both (a) the email-only takeover the original
+# flow allowed and (b) account enumeration via the POST response.
 #
 #   Step 1: POST /restore {email, device_id}
-#     - Look up Stripe customer by email.
-#     - If a billable subscription exists, sign a short-lived ticket that
-#       binds (device_id, customer_id) and return a Stripe Customer Portal
-#       URL with our /restore-complete endpoint as the return_url.
-#   Step 2: User authenticates with Stripe (email-link OTP → portal session
-#     → redirect back to /restore-complete?ticket=...).
-#   Step 3: /restore-complete validates the ticket, re-verifies the
-#     subscription is still live, transfers entitlement to device_id,
-#     and shows a success page.
+#     - Does NO Stripe lookup. Signs a short-lived token binding
+#       (email, device_id) and ALWAYS returns the same shape + a verify_url
+#       pointing at our own /restore-verify. The response is byte-identical
+#       whether or not the email has a subscription, so the API can't be
+#       used to enumerate subscribers.
+#   Step 2: GET /restore-verify?token=...
+#     - NOW does the Stripe lookup. If a billable subscription exists,
+#       redirects to the Stripe Customer Portal (email-link OTP) with
+#       /restore-complete as the return_url. Otherwise shows a generic
+#       "no subscription" page. Existence is only revealed to someone who
+#       opens the link in a browser, not to the automated POST surface.
+#   Step 3: GET /restore-complete?ticket=...
+#     - Stripe redirects here post-auth. Re-verifies the subscription and
+#       transfers entitlement to device_id.
 #
-# The only way to redeem a ticket is via Stripe's auth, so the attacker can
-# no longer move Pro entitlement just by knowing an email.
+# Entitlement still only moves after Stripe's own email auth (the takeover
+# fix), and the synchronous API no longer leaks who is a subscriber.
 
-_RESTORE_GENERIC = "If a subscription exists for this email, you'll receive a verification link."
+_RESTORE_GENERIC = "If a subscription exists for this email, opening the link will let you restore it."
 RESTORE_TICKET_TTL_MIN = 15
+RESTORE_VERIFY_TTL_MIN = 30
 _BILLABLE_STATES = {"active", "trialing", "past_due", "unpaid"}
 
 
 @router.post("/restore")
-async def restore(req: RestoreRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    # Rate limit: 5 restore attempts per IP per hour. Without Stripe, restore
-    # can't safely verify ownership, so degrade to a clear "unavailable" state.
+async def restore(req: RestoreRequest, request: Request):
+    # Rate limit: 5 restore attempts per IP per hour.
     client_ip = request.client.host if request.client else "unknown"
     check_rate_limit(f"restore:{client_ip}", max_calls=5, window_seconds=3600)
 
+    # No Stripe lookup here — the response must look identical for every email
+    # so it can't be used to probe who has a subscription. The lookup happens
+    # in GET /restore-verify when the user opens the link.
+    token = jwt.encode(
+        {
+            "type": "restore_verify",
+            "email": req.email,
+            "device_id": req.device_id,
+            "exp": datetime.now(UTC) + timedelta(minutes=RESTORE_VERIFY_TTL_MIN),
+        },
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+    return {
+        "message": _RESTORE_GENERIC,
+        "verify_url": f"{BACKEND_URL}/api/extension/restore-verify?token={token}",
+    }
+
+
+@router.get("/restore-verify", response_class=HTMLResponse, include_in_schema=False)
+async def restore_verify(token: str):
+    """Resolves a restore_verify token: looks up the Stripe customer for the
+    email and, if a billable subscription exists, redirects to the Customer
+    Portal (which authenticates the user via email OTP). Otherwise shows a
+    generic page. This is the only place subscriber existence is revealed,
+    and only to someone who actively opens the link.
+    """
+    try:
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if claims.get("type") != "restore_verify":
+            raise ValueError("wrong token type")
+        email = claims["email"]
+        device_id = claims["device_id"]
+    except Exception:
+        logger.warning("restore-verify: invalid or expired token")
+        return _branded_page(
+            icon="✗", icon_color="#a13b3b",
+            title="Verification link expired or invalid",
+            body="Open the extension and try Restore purchase again.",
+            auto_close=False,
+        )
+
     if not STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=503, detail="Restore is temporarily unavailable.")
+        return _branded_page(
+            icon="!", icon_color="#b06000",
+            title="Restore is temporarily unavailable",
+            body="Please try again later.",
+            auto_close=False,
+        )
 
     stripe.api_key = STRIPE_SECRET_KEY
-    try:
-        customers = stripe.Customer.list(email=req.email, limit=10).data
-    except stripe.StripeError:
-        logger.exception("restore: stripe customer lookup failed")
-        return {"message": _RESTORE_GENERIC}
-
     target_customer = None
-    for c in customers:
-        try:
+    try:
+        for c in stripe.Customer.list(email=email, limit=10).data:
             subs = stripe.Subscription.list(customer=c.id, status="all", limit=10)
             if any(s.status in _BILLABLE_STATES for s in subs.data):
                 target_customer = c
                 break
-        except stripe.StripeError:
-            continue
+    except stripe.StripeError:
+        logger.exception("restore-verify: stripe lookup failed")
+        return _branded_page(
+            icon="!", icon_color="#b06000",
+            title="Couldn't verify with Stripe",
+            body="Please try again in a moment.",
+            auto_close=False,
+        )
 
     if not target_customer:
-        # Generic response. The portal URL is the only signal of existence,
-        # so we don't return one here. Combined with the per-IP rate limit
-        # this leaves enumeration meaningfully bounded.
-        return {"message": _RESTORE_GENERIC}
+        return _branded_page(
+            icon="✗", icon_color="#a13b3b",
+            title="No active subscription found",
+            body="We couldn't find an active Pro subscription for this email. "
+                 "If you believe this is a mistake, email nabu.extension@gmail.com.",
+            auto_close=False,
+        )
 
     ticket = jwt.encode(
         {
             "type": "restore",
-            "device_id": req.device_id,
+            "device_id": device_id,
             "customer_id": target_customer.id,
             "exp": datetime.now(UTC) + timedelta(minutes=RESTORE_TICKET_TTL_MIN),
         },
@@ -667,16 +723,12 @@ async def restore(req: RestoreRequest, request: Request, db: AsyncSession = Depe
     return_url = f"{BACKEND_URL}/api/extension/restore-complete?ticket={ticket}"
     try:
         portal = stripe.billing_portal.Session.create(
-            customer=target_customer.id,
-            return_url=return_url,
+            customer=target_customer.id, return_url=return_url,
         )
     except stripe.StripeError as e:
         raise HTTPException(status_code=500, detail=str(e.user_message or e)) from e
 
-    return {
-        "message": "Open the verification link to complete restore.",
-        "verify_url": portal.url,
-    }
+    return RedirectResponse(portal.url, status_code=302)
 
 
 @router.get("/restore-complete", response_class=HTMLResponse, include_in_schema=False)

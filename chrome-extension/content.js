@@ -45,12 +45,23 @@
 
   // ── Storage helpers ────────────────────────────────────────────────────────
 
+  // Normalize a URL into a storage key. The hash is dropped for plain anchors
+  // (#section — same page) but KEPT for hash-routed SPAs (#/path or #!/path —
+  // genuinely different pages), so routes like example.com/#/a and /#/b don't
+  // collide into one bucket.
+  function normalizeUrl(url) {
+    const hashIdx = url.indexOf('#');
+    if (hashIdx === -1) return url;
+    const hash = url.slice(hashIdx); // includes the leading '#'
+    return /^#!?\//.test(hash) ? url : url.slice(0, hashIdx);
+  }
+
   // pageKey/saveThreads/updateHistoryIndex all accept an optional URL so the
   // SPA route-change handler can flush against the OLD url before location
   // changes (otherwise the pending debounced save fires after navigation and
   // writes the old route's threads under the new route's key — data corruption).
   function pageKey(url = location.href) {
-    return 'threads:' + url.split('#')[0];
+    return 'threads:' + normalizeUrl(url);
   }
 
   function makeThreadId() {
@@ -95,7 +106,7 @@
   async function updateHistoryIndex(records, urlArg = location.href) {
     try {
       const { history: existing = [] } = await chrome.storage.local.get('history');
-      const url = urlArg.split('#')[0];
+      const url = normalizeUrl(urlArg);
       const thisPage = records.map(r => ({
         id: r.id,
         url,

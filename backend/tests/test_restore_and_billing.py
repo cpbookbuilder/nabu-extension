@@ -53,9 +53,11 @@ def fake_stripe(monkeypatch):
         "subs_by_customer": {},          # customer_id → list of statuses
         "portal_url": "https://billing.stripe.test/session/redirect",
         "deleted_subs": [],              # appended by Subscription.delete
+        "customer_list_calls": 0,        # bumped each Customer.list call
     }
 
     def customer_list(**kw):
+        state["customer_list_calls"] += 1
         return _ListWrap(state["customers"])
 
     def customer_retrieve(cust_id):
@@ -84,62 +86,107 @@ def fake_stripe(monkeypatch):
     return state
 
 
-# ── /restore ──────────────────────────────────────────────────────────────
+# ── /restore (POST) — must NOT leak account existence ──────────────────────
 
 
-async def test_restore_returns_generic_when_no_stripe_customer_matches(
+async def test_restore_post_response_is_identical_regardless_of_account_existence(
     client: AsyncClient, fake_stripe,
 ):
-    # No Stripe customers for this email → generic response, no verify_url.
-    fake_stripe["customers"] = []
-    res = await client.post("/api/extension/restore", json={
-        "email": "stranger@example.com", "device_id": VALID_DEVICE_ID,
-    })
-    assert res.status_code == 200
-    body = res.json()
-    assert "verify_url" not in body
-    assert "message" in body
-
-
-async def test_restore_returns_generic_when_customer_has_no_billable_subscription(
-    client: AsyncClient, fake_stripe,
-):
-    # Customer exists but only has terminal subscriptions — no portal URL.
-    fake_stripe["customers"] = [_customer(id="cus_x")]
-    fake_stripe["subs_by_customer"] = {"cus_x": ["canceled", "incomplete_expired"]}
-    res = await client.post("/api/extension/restore", json={
-        "email": "lapsed@example.com", "device_id": VALID_DEVICE_ID,
-    })
-    assert res.status_code == 200
-    assert "verify_url" not in res.json()
-
-
-async def test_restore_returns_portal_url_when_active_subscription_exists(
-    client: AsyncClient, fake_stripe,
-):
+    """The anti-enumeration property: POST /restore does no Stripe lookup and
+    returns the same shape for a subscriber email and a stranger email. An
+    attacker can't tell from the API which emails are subscribers."""
+    # A matching billable customer...
     fake_stripe["customers"] = [_customer(id="cus_pro", email="pro@example.com")]
     fake_stripe["subs_by_customer"] = {"cus_pro": ["active"]}
-    res = await client.post("/api/extension/restore", json={
+    res_match = await client.post("/api/extension/restore", json={
         "email": "pro@example.com", "device_id": VALID_DEVICE_ID,
     })
-    assert res.status_code == 200
-    body = res.json()
-    assert "verify_url" in body
-    assert body["verify_url"].startswith(fake_stripe["portal_url"])
-    # Ticket is embedded in the return_url we handed to Stripe.
+    # ...and a totally unknown email.
+    res_miss = await client.post("/api/extension/restore", json={
+        "email": "stranger@example.com", "device_id": VALID_DEVICE_ID,
+    })
+
+    assert res_match.status_code == res_miss.status_code == 200
+    bm, bs = res_match.json(), res_miss.json()
+    # Same keys, same message — only the signed token inside verify_url differs.
+    assert set(bm) == set(bs) == {"message", "verify_url"}
+    assert bm["message"] == bs["message"]
+    assert "/restore-verify?token=" in bm["verify_url"]
+    assert "/restore-verify?token=" in bs["verify_url"]
+
+
+async def test_restore_post_does_not_call_stripe(client: AsyncClient, fake_stripe):
+    # POST must not touch Stripe at all — the lookup is deferred to the GET.
+    await client.post("/api/extension/restore", json={
+        "email": "pro@example.com", "device_id": VALID_DEVICE_ID,
+    })
+    assert fake_stripe["customer_list_calls"] == 0
+
+
+# ── /restore-verify (GET) — where existence is resolved ────────────────────
+
+
+def _mint_verify_token(email: str, device_id: str, ttl_min: int = 10) -> str:
+    import jwt
+
+    import extension_routes as er
+    return jwt.encode(
+        {
+            "type": "restore_verify",
+            "email": email,
+            "device_id": device_id,
+            "exp": datetime.now(UTC) + timedelta(minutes=ttl_min),
+        },
+        er.JWT_SECRET,
+        algorithm=er.JWT_ALGORITHM,
+    )
+
+
+async def test_restore_verify_redirects_to_portal_when_billable(client: AsyncClient, fake_stripe):
+    fake_stripe["customers"] = [_customer(id="cus_pro", email="pro@example.com")]
+    fake_stripe["subs_by_customer"] = {"cus_pro": ["active"]}
+    token = _mint_verify_token("pro@example.com", VALID_DEVICE_ID)
+    res = await client.get(
+        "/api/extension/restore-verify", params={"token": token}, follow_redirects=False,
+    )
+    assert res.status_code == 302
+    assert res.headers["location"].startswith(fake_stripe["portal_url"])
     assert "ticket=" in fake_stripe["last_return_url"]
 
 
-async def test_restore_503_when_stripe_not_configured(client: AsyncClient, monkeypatch):
-    import extension_routes as er
-    monkeypatch.setattr(er, "STRIPE_SECRET_KEY", "")
-    res = await client.post("/api/extension/restore", json={
-        "email": "anyone@example.com", "device_id": VALID_DEVICE_ID,
-    })
-    assert res.status_code == 503
+async def test_restore_verify_generic_page_when_no_billable_customer(client: AsyncClient, fake_stripe):
+    fake_stripe["customers"] = [_customer(id="cus_x")]
+    fake_stripe["subs_by_customer"] = {"cus_x": ["canceled"]}
+    token = _mint_verify_token("lapsed@example.com", VALID_DEVICE_ID)
+    res = await client.get("/api/extension/restore-verify", params={"token": token})
+    assert res.status_code == 200
+    assert "No active subscription found" in res.text
+
+
+async def test_restore_verify_rejects_bad_token(client: AsyncClient, fake_stripe):
+    res = await client.get("/api/extension/restore-verify", params={"token": "garbage"})
+    assert "expired or invalid" in res.text
 
 
 # ── /restore-complete ─────────────────────────────────────────────────────
+
+
+def _mint_ticket(device_id: str, customer_id: str, ttl_min: int = 5) -> str:
+    """Forge a valid ticket exactly the way /restore-verify mints one — lets
+    us bypass the Stripe portal step in tests without exposing the helper."""
+    import jwt
+
+    import extension_routes as er
+    return jwt.encode(
+        {
+            "type": "restore",
+            "device_id": device_id,
+            "customer_id": customer_id,
+            "exp": datetime.now(UTC) + timedelta(minutes=ttl_min),
+        },
+        er.JWT_SECRET,
+        algorithm=er.JWT_ALGORITHM,
+    )
 
 
 def _mint_ticket(device_id: str, customer_id: str, ttl_min: int = 5) -> str:

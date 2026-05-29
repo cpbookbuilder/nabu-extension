@@ -1,4 +1,4 @@
-const BACKEND_URL = 'https://nabu-extension-production.up.railway.app';
+// BACKEND_URL, ensureSession(), and apiFetch() come from session.js (loaded first).
 
 let currentTab = 'threads';
 let allData = [];
@@ -14,18 +14,11 @@ async function loadAccount() {
   const fine    = document.getElementById('upgrade-fineprint');
   const manage  = document.getElementById('btn-manage');
 
-  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-  if (!annotate_jwt) {
-    summary.textContent = 'Not connected yet — open a page and ask a question.';
-    barWrap.style.display = 'none';
-    upgrade.hidden = true; fine.hidden = true; manage.hidden = true;
-    return;
-  }
-
   try {
-    const res = await fetch(`${BACKEND_URL}/api/extension/usage`, {
-      headers: { Authorization: `Bearer ${annotate_jwt}` },
-    });
+    // ensureSession (via apiFetch) registers + refreshes the token on demand,
+    // so the account panel reflects real state instead of "not connected"
+    // until the user visits a content page.
+    const res = await apiFetch('/api/extension/usage');
     if (!res.ok) return;
     const { count, limit, subscribed, remaining } = await res.json();
 
@@ -61,14 +54,9 @@ async function loadAccount() {
 
 async function upgrade() {
   const btn = document.getElementById('btn-upgrade');
-  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-  if (!annotate_jwt) return;
   btn.textContent = 'Opening checkout…'; btn.disabled = true;
   try {
-    const res = await fetch(`${BACKEND_URL}/api/extension/create-checkout`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${annotate_jwt}` },
-    });
+    const res = await apiFetch('/api/extension/create-checkout', { method: 'POST' });
     if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `Server error ${res.status}`); }
     const { url } = await res.json();
     chrome.tabs.create({ url });
@@ -82,14 +70,9 @@ async function upgrade() {
 
 async function manageSubscription() {
   const btn = document.getElementById('btn-manage');
-  const { annotate_jwt } = await chrome.storage.local.get('annotate_jwt');
-  if (!annotate_jwt) return;
   btn.textContent = 'Opening…'; btn.disabled = true;
   try {
-    const res = await fetch(`${BACKEND_URL}/api/extension/manage-subscription`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${annotate_jwt}` },
-    });
+    const res = await apiFetch('/api/extension/manage-subscription', { method: 'POST' });
     if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `Server error ${res.status}`); }
     const { url } = await res.json();
     chrome.tabs.create({ url });
