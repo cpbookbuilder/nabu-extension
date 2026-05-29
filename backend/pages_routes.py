@@ -160,7 +160,7 @@ async def landing():
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nabu — AI threads for anything you read</title>
-  <meta name="description" content="Anchor AI conversation threads to any text on the web. Ask questions, save insights, never lose context.">
+  <meta name="description" content="Anchor your AI conversation threads to any text on the web. Ask questions, save insights, never lose context.">
   <style>{BASE_CSS}</style>
 </head>
 <body>
@@ -169,7 +169,7 @@ async def landing():
   <section class="hero">
     <img src="/static/icon128.png" alt="Nabu icon">
     <h1>Read deeper with <span>Nabu</span></h1>
-    <p>Anchor AI threads to anything you read. Ask questions, save insights, never lose context — on any page.</p>
+    <p>Anchor your AI threads to anything you read. Ask questions, save insights, never lose context — on any page.</p>
     <a class="btn-download" href="/static/nabu.zip" download>
       ⬇ Download Extension
     </a>
