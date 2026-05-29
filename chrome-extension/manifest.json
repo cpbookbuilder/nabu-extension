@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Nabu",
   "version": "1.2.5",
-  "description": "Anchor AI threads to anything you read. Ask questions, save insights, never lose context.",
+  "description": "Anchor your AI threads to anything you read. Ask questions, save insights, never lose context.",
   "permissions": ["storage"],
   "background": { "service_worker": "background.js" },
   "host_permissions": [
