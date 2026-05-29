@@ -19,6 +19,18 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.2.6] — 2026-05-28
+
+### Changed
+- Popup and dashboard now establish/refresh their session on demand, so account and usage info shows correctly instead of "not connected" until you visit a page.
+- "Restore purchase" no longer reveals whether an email is a subscriber from the API response — verification happens only after you open the link and authenticate with Stripe.
+- Tagline reworded ("Anchor your AI threads…") so it doesn't read like a product name.
+
+### Fixed
+- Hash-routed single-page apps (`#/route`) no longer share one storage bucket across different routes; plain `#section` anchors still map to the same page.
+
+---
+
 ## [v1.2.5] — 2026-05-28
 
 ### Added
