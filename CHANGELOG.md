@@ -19,6 +19,20 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.3.0] — 2026-06-03
+
+### Added
+- **Notes.** Highlight any passage and jot a personal note for yourself. The note can be left empty — useful as a bookmark for the highlighted text. Notes auto-save as you type and re-appear when you revisit the page. A new "Notes" tab in the dashboard lists them all.
+
+### Changed
+- "+Todo" and "Save" buttons are replaced by a single "📝 Note" action in the selection popover.
+- Dashboard tabs are now "Questions" and "Notes" (Todos and Saved have been removed).
+
+### Migration
+- If you had Todos or Saved items in v1.2.x, they are converted to notes on first load of v1.3 — pinned to the same URL they came from. Original entries are removed.
+
+---
+
 ## [v1.2.6] — 2026-05-28
 
 ### Changed
