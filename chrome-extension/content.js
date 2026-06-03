@@ -291,23 +291,43 @@
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
-  // Google Docs (and Slides/Sheets) render text on a <canvas>, so DOM selection
-  // can't see the document body. Bail with a one-time toast instead of leaving
-  // the user wondering why nothing happens. Published views (/pub) are normal
-  // HTML and work fine.
-  function isUnsupportedCanvasApp() {
-    if (location.hostname !== 'docs.google.com') return false;
-    if (/\/(document|presentation|spreadsheets)\/d\/[^/]+\/pub/.test(location.pathname)) return false;
-    return /\/(document|presentation|spreadsheets)\/d\//.test(location.pathname);
+  // Apps that render text on <canvas> instead of in the DOM. DOM selection
+  // can't see the content, so Nabu's whole flow (select → popover → thread)
+  // is dead in the water. Bail with a one-time toast per session so users
+  // know why nothing happens, instead of leaving them poking at it.
+  //
+  // Returns the app's display name when unsupported, or null when we should
+  // let the content script run normally (e.g., published Docs views).
+  function unsupportedCanvasApp() {
+    const host = location.hostname;
+    // Google Docs / Slides / Sheets — editor only; /pub published views are HTML.
+    if (host === 'docs.google.com') {
+      if (/\/(document|presentation|spreadsheets)\/d\/[^/]+\/pub/.test(location.pathname)) return null;
+      if (/\/(document|presentation|spreadsheets)\/d\//.test(location.pathname)) return 'Google Docs';
+      return null;
+    }
+    // Figma design/FigJam/Slides editor — figma.com/file|design|board|deck/...
+    if (host === 'www.figma.com' || host === 'figma.com') {
+      if (/^\/(file|design|board|deck|proto)\//.test(location.pathname)) return 'Figma';
+      return null;
+    }
+    // Miro boards — miro.com/app/board/...
+    if (host === 'miro.com' || host.endsWith('.miro.com')) {
+      if (location.pathname.startsWith('/app/board/')) return 'Miro';
+      return null;
+    }
+    return null;
   }
 
   function init() {
-    if (isUnsupportedCanvasApp()) {
+    const unsupported = unsupportedCanvasApp();
+    if (unsupported) {
       try {
-        if (!sessionStorage.getItem('nabu_docs_notice')) {
-          sessionStorage.setItem('nabu_docs_notice', '1');
+        const key = `nabu_canvas_notice_${unsupported}`;
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, '1');
           // Defer so the page has a body to mount the toast.
-          setTimeout(() => showToast("Nabu can't read Google Docs — text is rendered on a canvas, not the page DOM."), 1500);
+          setTimeout(() => showToast(`Nabu can't read ${unsupported} — text is rendered on a canvas, not the page DOM.`), 1500);
         }
       } catch (_) {}
       return;
