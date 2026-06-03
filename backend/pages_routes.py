@@ -238,7 +238,7 @@ async def landing():
       <div class="step-num">2</div>
       <div class="step-body">
         <h4>Start reading</h4>
-        <p>Visit any webpage, select text, and click <strong>Ask ✦</strong> or <strong>Note</strong> to start your first thread.</p>
+        <p>Visit any webpage, select text, and click <strong>Ask AI</strong> or <strong>Note</strong> to start your first thread.</p>
       </div>
     </div>
     <div class="step">
