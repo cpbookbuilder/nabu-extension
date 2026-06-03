@@ -247,7 +247,7 @@ function render(entries) {
     list.innerHTML = entries.map((e, i) => `
       <div class="entry" data-url="${escapeAttr(e.url)}" data-i="${i}">
         <div class="entry-anchor">"${escapeHtml(e.anchor)}"</div>
-        ${e.noteText ? `<div class="entry-question">${escapeHtml(e.noteText)}</div>` : '<div class="entry-question" style="color:#5f6368;font-style:italic;">(empty note)</div>'}
+        ${(e.firstNote || e.noteText) ? `<div class="entry-question">${escapeHtml(e.firstNote || e.noteText)}${e.noteCount > 1 ? ` <span style="color:#9aa0a6;font-weight:400;">· +${e.noteCount - 1} more</span>` : ''}</div>` : '<div class="entry-question" style="color:#5f6368;font-style:italic;">(empty note)</div>'}
         ${e.surroundingText ? `<div class="entry-context">${escapeHtml(e.surroundingText)}</div>` : ''}
         <div class="entry-meta">
           <span class="entry-url" title="${escapeAttr(e.url)}">${shortUrl(e.url)}</span>
