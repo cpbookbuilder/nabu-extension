@@ -636,7 +636,7 @@
     // backend. Notes show up as amber bubbles in the body; the badge counts
     // them. Empty notes are valid (the highlight alone is the bookmark).
     if (kind === 'note') {
-      root.getElementById('inp').placeholder = 'Type a note (Enter to save)…';
+      root.getElementById('inp').placeholder = 'Type a note (optional) — Enter to save';
       root.getElementById('send').onclick = () => saveNoteEntry(id);
       root.getElementById('inp').addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNoteEntry(id); }
