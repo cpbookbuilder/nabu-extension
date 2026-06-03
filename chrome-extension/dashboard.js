@@ -151,7 +151,7 @@ async function deleteAccount() {
 async function clearAllLocalData() {
   const all = await chrome.storage.local.get(null);
   const keysToRemove = Object.keys(all).filter(k =>
-    k.startsWith('threads:') || ['history', 'todos', 'reminders', 'annotate_jwt', 'device_id'].includes(k)
+    k.startsWith('threads:') || ['history', 'annotate_jwt', 'device_id', '_notes_migrated_v1_3'].includes(k)
   );
   if (keysToRemove.length) await chrome.storage.local.remove(keysToRemove);
 }
@@ -159,16 +159,19 @@ async function clearAllLocalData() {
 // ── Init ───────────────────────────────────────────────────────────────────
 
 async function load() {
-  const { history = [], todos = [], reminders = [] } =
-    await chrome.storage.local.get(['history', 'todos', 'reminders']);
+  const { history = [] } = await chrome.storage.local.get(['history']);
+
+  // History contains both question threads (kind != 'note' or missing) and
+  // notes (kind === 'note'). Split for the two tabs + stat tiles.
+  const questionEntries = history.filter(h => h.kind !== 'note');
+  const noteEntries     = history.filter(h => h.kind === 'note');
 
   // questionCount was added in v1.2 — older history entries fall back to 1.
-  const totalQuestions = history.reduce((sum, h) => sum + (h.questionCount ?? 1), 0);
+  const totalQuestions = questionEntries.reduce((sum, h) => sum + (h.questionCount ?? 1), 0);
   document.getElementById('stat-questions').textContent = totalQuestions.toLocaleString();
-  document.getElementById('stat-todos').textContent     = todos.length.toLocaleString();
-  document.getElementById('stat-saved').textContent     = reminders.length.toLocaleString();
+  document.getElementById('stat-notes').textContent     = noteEntries.length.toLocaleString();
 
-  const dataMap = { threads: history, todos, reminders };
+  const dataMap = { threads: questionEntries, notes: noteEntries };
   allData = (dataMap[currentTab] || []).sort((a, b) =>
     (b.savedAt || b.createdAt || 0) - (a.savedAt || a.createdAt || 0) ||
     (b.createdAt || 0) - (a.createdAt || 0)
@@ -216,7 +219,7 @@ function render(entries) {
   const list = document.getElementById('list');
 
   if (!entries.length) {
-    const labels = { threads: 'No threads yet.', todos: 'No todos yet.', reminders: 'Nothing saved yet.' };
+    const labels = { threads: 'No questions yet.', notes: 'No notes yet.' };
     list.innerHTML = `<p class="empty">${labels[currentTab]}<br>Select text on any page to get started.</p>`;
     return;
   }
@@ -240,107 +243,54 @@ function render(entries) {
       );
     });
 
-  } else if (currentTab === 'todos') {
+  } else { // notes
     list.innerHTML = entries.map((e, i) => `
-      <div class="item ${e.done ? 'done' : ''}" data-i="${i}">
-        <input type="checkbox" class="item-check" ${e.done ? 'checked' : ''} data-i="${i}">
-        <div class="item-body" data-i="${i}">
-          <div class="item-anchor">"${escapeHtml(e.anchor)}"</div>
-          ${e.surroundingText ? `<div class="item-text">${escapeHtml(e.surroundingText.slice(0, 160))}</div>` : ''}
-          <div class="item-meta">
-            <span class="item-url" title="${escapeAttr(e.url)}">${shortUrl(e.url)}</span>
-            <span>${relativeDate(e.createdAt)}</span>
-          </div>
+      <div class="entry" data-url="${escapeAttr(e.url)}" data-i="${i}">
+        <div class="entry-anchor">"${escapeHtml(e.anchor)}"</div>
+        ${e.noteText ? `<div class="entry-question">${escapeHtml(e.noteText)}</div>` : '<div class="entry-question" style="color:#5f6368;font-style:italic;">(empty note)</div>'}
+        ${e.surroundingText ? `<div class="entry-context">${escapeHtml(e.surroundingText)}</div>` : ''}
+        <div class="entry-meta">
+          <span class="entry-url" title="${escapeAttr(e.url)}">${shortUrl(e.url)}</span>
+          <span>${relativeDate(e.savedAt)}</span>
         </div>
-        <button class="item-del" data-i="${i}" title="Delete">×</button>
       </div>
     `).join('');
 
-    list.querySelectorAll('.item-check').forEach(cb => {
-      cb.addEventListener('change', async e => {
-        e.stopPropagation();
-        const i = parseInt(cb.dataset.i);
-        const entry = entries[i];
-        entry.done = cb.checked;
-        await updateItem('todos', entry);
-        load();
-      });
-    });
-
-    list.querySelectorAll('.item-body').forEach(body => {
-      body.addEventListener('click', () => {
-        const entry = entries[parseInt(body.dataset.i)];
-        chrome.tabs.create({ url: entry.url });
-      });
-    });
-
-    list.querySelectorAll('.item-del').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        await deleteItem('todos', entries[parseInt(btn.dataset.i)].id);
-        load();
-      });
-    });
-
-  } else { // reminders
-    list.innerHTML = entries.map((e, i) => `
-      <div class="item" data-i="${i}">
-        <div class="reminder-dot"></div>
-        <div class="item-body" data-i="${i}">
-          <div class="item-anchor">"${escapeHtml(e.anchor)}"</div>
-          ${e.surroundingText ? `<div class="item-text">${escapeHtml(e.surroundingText.slice(0, 160))}</div>` : ''}
-          <div class="item-meta">
-            <span class="item-url" title="${escapeAttr(e.url)}">${shortUrl(e.url)}</span>
-            <span>${relativeDate(e.createdAt)}</span>
-          </div>
-        </div>
-        <button class="item-del" data-i="${i}" title="Delete">×</button>
-      </div>
-    `).join('');
-
-    list.querySelectorAll('.item-body').forEach(body => {
-      body.addEventListener('click', () => {
-        const entry = entries[parseInt(body.dataset.i)];
-        chrome.tabs.create({ url: entry.url });
-      });
-    });
-
-    list.querySelectorAll('.item-del').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        await deleteItem('reminders', entries[parseInt(btn.dataset.i)].id);
-        load();
-      });
+    list.querySelectorAll('.entry').forEach((el, i) => {
+      el.addEventListener('click', () =>
+        chrome.runtime.sendMessage({ type: 'openAndScroll', url: entries[i].url, threadId: entries[i].id })
+      );
     });
   }
-}
-
-// ── Storage helpers ────────────────────────────────────────────────────────
-
-async function updateItem(type, updated) {
-  const { [type]: items = [] } = await chrome.storage.local.get(type);
-  const next = items.map(it => it.id === updated.id ? updated : it);
-  await chrome.storage.local.set({ [type]: next });
-}
-
-async function deleteItem(type, id) {
-  const { [type]: items = [] } = await chrome.storage.local.get(type);
-  await chrome.storage.local.set({ [type]: items.filter(it => it.id !== id) });
 }
 
 // ── Clear button ───────────────────────────────────────────────────────────
 
 document.getElementById('clear-btn').addEventListener('click', async () => {
-  const labels = { threads: 'all threads (history + saved threads on every page)', todos: 'all todos', reminders: 'all saved-for-later items' };
-  if (!confirm(`Clear ${labels[currentTab]}?`)) return;
-  if (currentTab === 'threads') {
-    // Clear both the recent-threads index and every per-URL thread blob.
-    const all = await chrome.storage.local.get(null);
-    const threadKeys = Object.keys(all).filter(k => k.startsWith('threads:'));
-    await chrome.storage.local.remove(['history', ...threadKeys]);
-  } else {
-    await chrome.storage.local.set({ [currentTab]: [] });
+  // Both Questions and Notes live in the same per-URL threads:* buckets and
+  // the same history index, so "Clear" removes the entries of the current
+  // tab's kind from history; per-URL buckets are pruned to the other kind.
+  const tabKind = currentTab === 'notes' ? 'note' : 'thread';
+  const otherKind = currentTab === 'notes' ? 'thread' : 'note';
+  const label = currentTab === 'notes' ? 'all notes' : 'all questions';
+  if (!confirm(`Clear ${label}?`)) return;
+
+  const all = await chrome.storage.local.get(null);
+  const updates = {};
+  // History: keep only entries that are NOT the current tab's kind.
+  updates.history = (all.history || []).filter(h => (h.kind || 'thread') !== tabKind);
+  // Per-URL threads:<url> buckets: drop records of this kind, keep the other.
+  const threadKeys = Object.keys(all).filter(k => k.startsWith('threads:'));
+  const keysToRemove = [];
+  for (const k of threadKeys) {
+    const next = (all[k] || []).filter(r => (r.kind || 'thread') !== tabKind);
+    if (next.length === 0) keysToRemove.push(k);
+    else updates[k] = next;
   }
+  await chrome.storage.local.set(updates);
+  if (keysToRemove.length) await chrome.storage.local.remove(keysToRemove);
+  // Suppress unused warning — otherKind documents the intent.
+  void otherKind;
   load();
 });
 
@@ -394,7 +344,7 @@ load();
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   const touched = Object.keys(changes);
-  if (touched.some(k => k === 'history' || k === 'todos' || k === 'reminders' || k.startsWith('threads:'))) {
+  if (touched.some(k => k === 'history' || k.startsWith('threads:'))) {
     load();
   }
 });

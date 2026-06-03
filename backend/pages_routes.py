@@ -170,12 +170,11 @@ async def landing():
     <img src="/static/icon128.png" alt="Nabu icon">
     <h1>Read deeper with <span>Nabu</span></h1>
     <p>Anchor your AI threads to anything you read. Ask questions, save insights, never lose context — on any page.</p>
-    <a class="btn-download" href="/static/nabu.zip" download>
-      ⬇ Download Extension
+    <a class="btn-download" href="https://chromewebstore.google.com/detail/nabu/hohohfmcmcfgocionccijjacmgkmmini" target="_blank" rel="noopener">
+      ⬇ Add to Chrome
     </a>
-    <a class="btn-secondary" href="#install">How to install</a>
     <p style="margin-top:16px; font-size:12px; color:#475569;">
-      Direct link: <a href="/static/nabu.zip" download>nabu-extension-production.up.railway.app/static/nabu.zip</a>
+      Installs from the official Chrome Web Store.
     </p>
   </section>
 
@@ -188,7 +187,7 @@ async def landing():
       </div>
       <div class="screenshot-item">
         <img src="/static/screenshots/screenshot-2.png" alt="Nabu quick action popover on text selection">
-        <div class="screenshot-caption">Quick actions — Ask, What does this mean?, Explain more, Todo, Save</div>
+        <div class="screenshot-caption">Quick actions — Ask, What does this mean?, Explain more, Note</div>
       </div>
     </div>
   </div>
@@ -210,9 +209,9 @@ async def landing():
       <p>Select text and instantly ask "What does this mean?" or "Explain more" with one click.</p>
     </div>
     <div class="feature">
-      <div class="feature-icon">📋</div>
-      <h3>Todos & saved items</h3>
-      <p>Save any selection as a todo or for later reading. All organized in your history panel.</p>
+      <div class="feature-icon">📝</div>
+      <h3>Notes</h3>
+      <p>Highlight any passage and jot a quick note for yourself. All organized in your dashboard.</p>
     </div>
     <div class="feature">
       <div class="feature-icon">🔒</div>
@@ -227,47 +226,26 @@ async def landing():
   </div>
 
   <div class="install" id="install">
-    <h2>How to install</h2>
+    <h2>Getting started</h2>
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-body">
-        <h4>Download the extension</h4>
-        <p>Click the download button above to get <code>nabu.zip</code></p>
+        <h4>Install from the Chrome Web Store</h4>
+        <p>Click <strong>Add to Chrome</strong> above, then confirm in the browser dialog.</p>
       </div>
     </div>
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-body">
-        <h4>Unzip the file</h4>
-        <p>Extract the <code>chrome-extension</code> folder anywhere on your computer.</p>
+        <h4>Start reading</h4>
+        <p>Visit any webpage, select text, and click <strong>Ask ✦</strong> or <strong>Note</strong> to start your first thread.</p>
       </div>
     </div>
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-body">
-        <h4>Open Chrome Extensions</h4>
-        <p>Go to <code>chrome://extensions</code> and enable <strong>Developer mode</strong> (top right toggle).</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-body">
-        <h4>Load the extension</h4>
-        <p>Click <strong>Load unpacked</strong> and select the <code>chrome-extension</code> folder.</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">5</div>
-      <div class="step-body">
-        <h4>Start reading</h4>
-        <p>Visit any webpage, select text, and click <strong>Ask ✦</strong> to start your first thread.</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-num">6</div>
-      <div class="step-body">
-        <h4>Ask, follow up, and save</h4>
-        <p>Type your question and hit Enter. The AI responds inline, anchored to your selection. Ask follow-ups in the same thread. Use <strong>What does this mean?</strong> or <strong>Explain more</strong> for instant answers. Save anything as a <strong>Todo</strong> or <strong>Reminder</strong> from the same popover. Click the extension icon to see your full history.</p>
+        <h4>Ask, follow up, and take notes</h4>
+        <p>Type your question and hit Enter. The AI responds inline, anchored to your selection. Ask follow-ups in the same thread, or attach a quick <strong>Note</strong> to anything you read. Click the extension icon to see your full history.</p>
       </div>
     </div>
   </div>

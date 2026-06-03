@@ -35,13 +35,11 @@
   let _recheckTimer = null;
 
   const threads = new Map(); // threadId → thread object (thread.p holds the DOM element)
-  const quickMarks = []; // {el, highlightSpan, anchorEl, anchor} for Todo/Save markers
 
-  // Visual config per quick-mark type: highlight bg + side-label text/style.
-  const QUICK_MARK = {
-    todos:     { bg: 'rgba(15, 157, 88, 0.28)',  label: '✓ Added to Todos',  color: '#0f9d58' },
-    reminders: { bg: 'rgba(242, 153, 0, 0.30)',  label: '🔖 Saved for later', color: '#b06000' },
-  };
+  // Note highlight color (amber-ish). Question threads use the existing color
+  // wheel; notes get a distinct hue so users can tell them apart at a glance.
+  const NOTE_HIGHLIGHT_BG = 'rgba(242, 153, 0, 0.30)';
+  const NOTE_COLOR = '#b06000';
 
   // ── Storage helpers ────────────────────────────────────────────────────────
 
@@ -84,13 +82,17 @@
   async function saveThreads(url = location.href) {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const records = [...threads.values()]
-      .filter(t => t.id && t.messages.length > 0)
+      // Question threads must have at least one message to be persisted;
+      // notes can be empty (the highlight + anchor are the value).
+      .filter(t => t.id && (t.kind === 'note' || t.messages.length > 0))
       .map(t => ({
         id: t.id,
+        kind: t.kind || 'thread',
         anchor: t.anchor,
         color: t.color,
         pageContext: t.pageContext,
         messages: t.messages,
+        noteText: t.noteText || '',
         createdAt: t.createdAt,
         savedAt: Date.now(),
       }))
@@ -109,12 +111,14 @@
       const url = normalizeUrl(urlArg);
       const thisPage = records.map(r => ({
         id: r.id,
+        kind: r.kind || 'thread',
         url,
         pageTitle: document.title,
         anchor: r.anchor.slice(0, 120),
         surroundingText: (r.pageContext?.surroundingText || '').slice(0, 300),
-        firstQuestion: (r.messages.find(m => m.role === 'user')?.content || '').slice(0, 200),
-        questionCount: r.messages.filter(m => m.role === 'user').length,
+        firstQuestion: (r.messages?.find(m => m.role === 'user')?.content || '').slice(0, 200),
+        questionCount: r.messages ? r.messages.filter(m => m.role === 'user').length : 0,
+        noteText: (r.noteText || '').slice(0, 300),
         createdAt: r.createdAt,
         savedAt: r.savedAt,
       }));
@@ -148,7 +152,9 @@
       if (p) {
         openThread(p, rec.anchor, rec.pageContext, {
           id: rec.id,
+          kind: rec.kind || 'thread',
           messages: rec.messages,
+          noteText: rec.noteText || '',
           color: rec.color,
           createdAt: rec.createdAt,
           restored: true,
@@ -451,8 +457,7 @@
       <button id="annotate-ask">Ask ✦</button>
       <button id="annotate-mean">What does this mean?</button>
       <button id="annotate-explain">Explain more</button>
-      <button id="annotate-todo">+ Todo</button>
-      <button id="annotate-remind">🔖 Save</button>
+      <button id="annotate-note">📝 Note</button>
       <button id="annotate-dashboard" title="Open Nabu dashboard">Nabu ↗</button>
       <button id="annotate-close" title="Close" aria-label="Close">×</button>
     `;
@@ -494,16 +499,9 @@
       window.getSelection()?.removeAllRanges();
     });
 
-    document.getElementById('annotate-todo').addEventListener('click', () => {
+    document.getElementById('annotate-note').addEventListener('click', () => {
       clearTimeout(popoverTimer);
-      saveTodoOrReminder('todos', text, anchorEl, savedRange);
-      removePopover();
-      window.getSelection()?.removeAllRanges();
-    });
-
-    document.getElementById('annotate-remind').addEventListener('click', () => {
-      clearTimeout(popoverTimer);
-      saveTodoOrReminder('reminders', text, anchorEl, savedRange);
+      openThread(anchorEl, text, getPageContext(anchorEl), { savedRange, selectionOffset, kind: 'note' });
       removePopover();
       window.getSelection()?.removeAllRanges();
     });
@@ -521,115 +519,6 @@
       removePopover();
       window.getSelection()?.removeAllRanges();
     });
-  }
-
-  async function saveTodoOrReminder(type, anchor, anchorEl, savedRange) {
-    const ctx = getPageContext(anchorEl);
-    const entry = {
-      id: makeThreadId(),
-      url: location.href.split('#')[0],
-      pageTitle: document.title,
-      anchor: anchor.slice(0, 300),
-      surroundingText: (ctx.surroundingText || '').slice(0, 500),
-      createdAt: Date.now(),
-      ...(type === 'todos' ? { done: false } : {}),
-    };
-    try {
-      const existing = (await chrome.storage.local.get(type))[type] || [];
-      await chrome.storage.local.set({ [type]: [entry, ...existing].slice(0, 500) });
-    } catch (_) {}
-    addQuickMarker(type, anchorEl, anchor, savedRange, entry.id);
-  }
-
-  // Highlights the selected text and pins a small side label ("Added to
-  // Todos" / "Saved") at that vertical position — mirrors the way a question
-  // thread highlights + anchors a card, but lighter weight and dismissable.
-  function addQuickMarker(type, anchorEl, anchor, savedRange, entryId) {
-    const cfg = QUICK_MARK[type] || QUICK_MARK.todos;
-    const highlightSpan = highlightAnchorText(anchorEl, anchor, null, savedRange, cfg.bg);
-
-    const snippet = anchor.length > 140 ? anchor.slice(0, 140) + '…' : anchor;
-    const el = buildQuickCard(snippet, cfg.color, cfg.label);
-    document.body.appendChild(el);
-
-    const mark = { el, highlightSpan, anchorEl, anchor, type, entryId };
-    quickMarks.push(mark);
-
-    // × removes the card, the highlight, AND the stored Todo/Saved item —
-    // the box is the undo affordance, mirroring deleting a Todo card.
-    el.shadowRoot.getElementById('close').addEventListener('click', e => {
-      e.stopPropagation();
-      removeQuickMark(mark);
-    });
-    el.shadowRoot.getElementById('snippet').addEventListener('click', () => {
-      const live = mark.anchorEl?.isConnected ? mark.anchorEl : findAnchorElement(mark.anchor || '');
-      (mark.highlightSpan?.isConnected ? mark.highlightSpan : live)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-
-    positionQuickMark(mark);
-    resolveCollisions();
-  }
-
-  // A thread-card lookalike for Todo/Saved markers: same header (colored bar
-  // + snippet of the highlighted text + close), but the body is a single
-  // static status label instead of an AI conversation, and there's no input.
-  function buildQuickCard(snippet, color, label) {
-    const wrap = document.createElement('div');
-    wrap.className = 'annotate-card';
-    const root = wrap.attachShadow({ mode: 'open' });
-    root.innerHTML = `
-      <style>
-        :host {
-          all: initial;
-          font-family: 'Google Sans', Roboto, Arial, sans-serif;
-          font-size: 13px; color: #202124;
-          position: fixed; right: 16px; width: 300px;
-          background: #fff; border-radius: 8px;
-          box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 4px 12px rgba(0,0,0,.12);
-          display: flex; flex-direction: column;
-          z-index: 2147483647; overflow: hidden;
-        }
-        #header {
-          padding: 10px 10px 8px 12px; border-bottom: 1px solid #e8eaed;
-          display: flex; align-items: flex-start; gap: 8px;
-        }
-        #bar { width: 3px; min-height: 18px; border-radius: 2px; background: ${color}; flex-shrink: 0; margin-top: 1px; align-self: stretch; }
-        #snippet {
-          flex: 1; font-size: 11px; color: #5f6368; line-height: 1.5; cursor: pointer;
-          overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-        }
-        #snippet:hover { color: ${color}; }
-        #close { background: none; border: none; cursor: pointer; color: #80868b; font-size: 20px; line-height: 1; padding: 0 2px; flex-shrink: 0; margin-top: -1px; }
-        #close:hover { color: #202124; }
-        #body { padding: 8px 12px; }
-        .label { background: #f8f9fa; border-radius: 8px 8px 8px 2px; padding: 7px 10px; font-size: 13px; font-weight: 600; color: ${color}; display: inline-block; }
-      </style>
-      <div id="header">
-        <div id="bar"></div>
-        <div id="snippet">${escapeHtml(snippet)}</div>
-        <button id="close" title="Remove">×</button>
-      </div>
-      <div id="body"><span class="label">${escapeHtml(label)}</span></div>
-    `;
-    return wrap;
-  }
-
-  async function removeQuickMark(mark) {
-    mark.el.remove();
-    removeHighlight(mark.highlightSpan);
-    const i = quickMarks.indexOf(mark);
-    if (i !== -1) quickMarks.splice(i, 1);
-    if (mark.entryId && mark.type) {
-      try {
-        const items = (await chrome.storage.local.get(mark.type))[mark.type] || [];
-        await chrome.storage.local.set({ [mark.type]: items.filter(it => it.id !== mark.entryId) });
-      } catch (_) {}
-    }
-  }
-
-  function positionQuickMark(mark) {
-    const live = mark.anchorEl?.isConnected ? mark.anchorEl : findAnchorElement(mark.anchor || '');
-    if (live) mark.el.style.top = `${live.getBoundingClientRect().top}px`;
   }
 
   function showToast(msg) {
@@ -657,39 +546,68 @@
   }
 
   function openThread(p, anchor, pageContext = {}, opts = {}) {
-    // For paragraph-button clicks (full paragraph as anchor), reuse any existing thread on that element
-    const isFullParagraph = anchor.length >= p.textContent.replace(/\s+/g, ' ').trim().length * 0.85;
-    if (isFullParagraph) {
-      const existing = getThreadByP(p);
-      if (existing) { existing.card.shadowRoot.getElementById('inp').focus(); return; }
+    const kind = opts.kind || 'thread';
+
+    // For paragraph-button clicks (full paragraph as anchor), reuse any existing
+    // thread on that element. Only applies to question threads.
+    if (kind === 'thread') {
+      const isFullParagraph = anchor.length >= p.textContent.replace(/\s+/g, ' ').trim().length * 0.85;
+      if (isFullParagraph) {
+        const existing = getThreadByP(p);
+        if (existing && existing.kind !== 'note') {
+          existing.card.shadowRoot.getElementById('inp').focus();
+          return;
+        }
+      }
     }
 
-    const color = opts.color || COLORS[colorIdx++ % COLORS.length];
+    const color = opts.color || (kind === 'note' ? NOTE_COLOR : COLORS[colorIdx++ % COLORS.length]);
     const id = opts.id || makeThreadId();
+    const highlightBg = kind === 'note' ? NOTE_HIGHLIGHT_BG : undefined;
 
     const selectionOffset = opts.selectionOffset ?? 0;
-    const highlightSpan = opts.restored ? null : highlightAnchorText(p, anchor, color, opts.savedRange);
-    const card = buildCard(anchor, color);
+    const highlightSpan = opts.restored ? null : highlightAnchorText(p, anchor, color, opts.savedRange, highlightBg);
+    const card = kind === 'note'
+      ? buildNoteCard(anchor, color, opts.noteText || '')
+      : buildCard(anchor, color);
     document.body.appendChild(card);
 
-    const thread = { id, p, card, messages: opts.messages ? [...opts.messages] : [], anchor, pageContext, color, abortCtrl: null, highlightSpan, selectionOffset, createdAt: opts.createdAt || Date.now() };
+    const thread = {
+      id, p, card, kind,
+      messages: opts.messages ? [...opts.messages] : [],
+      noteText: opts.noteText || '',
+      anchor, pageContext, color, abortCtrl: null, highlightSpan, selectionOffset,
+      createdAt: opts.createdAt || Date.now(),
+    };
     threads.set(id, thread);
     makeHighlightClickable(highlightSpan, thread);
     positionCard(thread);
     resolveCollisions();
 
-    if (thread.messages.length) {
-      ensureKaTeX().then(() => injectKaTeXCSS(card.shadowRoot));
-      for (const msg of thread.messages) addMsg(thread, msg.role, msg.content);
-      const assistantCount = thread.messages.filter(m => m.role === 'assistant').length;
-      if (assistantCount > 0) card.shadowRoot.getElementById('badge').textContent = assistantCount;
-    }
-
     const root = card.shadowRoot;
     root.getElementById('close').onclick = () => closeThread(id);
+    root.getElementById('snippet').onclick = () => scrollToAnchor(id);
+
+    if (kind === 'note') {
+      // Notes auto-save 800ms after the user stops typing — same debounce as
+      // question threads. Empty notes are valid (you may want a bookmark with
+      // just the highlight).
+      const ta = root.getElementById('note-input');
+      ta.value = thread.noteText;
+      const autoresize = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 240) + 'px'; };
+      autoresize();
+      ta.addEventListener('input', () => {
+        thread.noteText = ta.value;
+        autoresize();
+        scheduleSave();
+      });
+      if (!opts.restored) setTimeout(() => ta.focus(), 100);
+      return;
+    }
+
+    // Question-thread wiring (unchanged path)
     root.getElementById('send').onclick = () => sendMessage(id);
     root.getElementById('collapse').onclick = () => card.classList.toggle('collapsed');
-    root.getElementById('snippet').onclick = () => scrollToAnchor(id);
     root.getElementById('inp').addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(id); }
     });
@@ -697,6 +615,13 @@
       this.style.height = 'auto';
       this.style.height = Math.min(this.scrollHeight, 100) + 'px';
     });
+
+    if (thread.messages.length) {
+      ensureKaTeX().then(() => injectKaTeXCSS(card.shadowRoot));
+      for (const msg of thread.messages) addMsg(thread, msg.role, msg.content);
+      const assistantCount = thread.messages.filter(m => m.role === 'assistant').length;
+      if (assistantCount > 0) card.shadowRoot.getElementById('badge').textContent = assistantCount;
+    }
 
     if (opts.restored) {
       card.classList.add('collapsed');
@@ -728,12 +653,11 @@
     if (liveP) thread.card.style.top = `${liveP.getBoundingClientRect().top + (thread.selectionOffset || 0)}px`;
   }
 
-  // Push overlapping cards/markers apart so they're all accessible.
+  // Push overlapping cards apart so they're all accessible.
   function resolveCollisions() {
-    const items = [
-      ...[...threads.values()].map(t => ({ el: t.card, top: parseFloat(t.card.style.top) || 0 })),
-      ...quickMarks.map(m => ({ el: m.el, top: parseFloat(m.el.style.top) || 0 })),
-    ].sort((a, b) => a.top - b.top);
+    const items = [...threads.values()]
+      .map(t => ({ el: t.card, top: parseFloat(t.card.style.top) || 0 }))
+      .sort((a, b) => a.top - b.top);
     for (let i = 1; i < items.length; i++) {
       const gap = items[i].top - items[i - 1].top;
       if (gap < 48) {
@@ -745,7 +669,6 @@
 
   function repositionAll() {
     for (const thread of threads.values()) positionCard(thread);
-    for (const mark of quickMarks) positionQuickMark(mark);
     resolveCollisions();
   }
 
@@ -1309,6 +1232,63 @@
       </div>
     `;
 
+    return wrap;
+  }
+
+  // A note card mirrors the thread card's header/snippet but its body is a
+  // single editable textarea instead of an AI conversation. Notes can be
+  // empty — useful as bookmarks for a highlighted passage.
+  function buildNoteCard(context, color, initialText) {
+    const wrap = document.createElement('div');
+    wrap.className = 'annotate-card';
+    const root = wrap.attachShadow({ mode: 'open' });
+    const snippet = context.length > 140 ? context.slice(0, 140) + '…' : context;
+    root.innerHTML = `
+      <style>
+        :host {
+          all: initial;
+          font-family: 'Google Sans', Roboto, Arial, sans-serif;
+          font-size: 13px; color: #202124;
+          position: fixed; right: 16px; width: 300px;
+          background: #fff; border-radius: 8px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 4px 12px rgba(0,0,0,.12);
+          display: flex; flex-direction: column;
+          z-index: 2147483647; overflow: hidden;
+          max-height: 360px;
+        }
+        #header {
+          padding: 10px 10px 8px 12px; border-bottom: 1px solid #e8eaed;
+          display: flex; align-items: flex-start; gap: 8px;
+        }
+        #bar { width: 3px; min-height: 18px; border-radius: 2px; background: ${color}; flex-shrink: 0; margin-top: 1px; align-self: stretch; }
+        #snippet {
+          flex: 1; font-size: 11px; color: #5f6368; line-height: 1.5; cursor: pointer;
+          overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        }
+        #snippet:hover { color: ${color}; }
+        #close { background: none; border: none; cursor: pointer; color: #80868b; font-size: 20px; line-height: 1; padding: 0 2px; flex-shrink: 0; margin-top: -1px; }
+        #close:hover { color: #202124; }
+        #body { padding: 10px 12px 12px; }
+        #note-input {
+          width: 100%; min-height: 60px; max-height: 240px;
+          background: #fffef5; border: 1px solid #e8eaed; border-radius: 6px;
+          padding: 8px 10px;
+          color: #202124; font-size: 13px; font-family: inherit;
+          outline: none; resize: none; line-height: 1.5;
+          box-sizing: border-box;
+        }
+        #note-input::placeholder { color: #9aa0a6; }
+        #note-input:focus { border-color: ${color}; background: #fff; }
+      </style>
+      <div id="header">
+        <div id="bar"></div>
+        <div id="snippet">${escapeHtml(snippet)}</div>
+        <button id="close" title="Close">×</button>
+      </div>
+      <div id="body">
+        <textarea id="note-input" rows="3" placeholder="Write a note (optional)…"></textarea>
+      </div>
+    `;
     return wrap;
   }
 

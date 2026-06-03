@@ -201,11 +201,11 @@ async function deleteAccount() {
 }
 
 async function clearAllLocalData() {
-  // Clear everything Nabu has stored locally: threads, history, todos, reminders,
-  // device id, JWT — leave a fresh slate.
+  // Clear everything Nabu has stored locally: per-URL thread buckets, history,
+  // device id, JWT, migration flag — leave a fresh slate.
   const all = await chrome.storage.local.get(null);
   const keysToRemove = Object.keys(all).filter(k =>
-    k.startsWith('threads:') || ['history', 'todos', 'reminders', 'annotate_jwt', 'device_id'].includes(k)
+    k.startsWith('threads:') || ['history', 'annotate_jwt', 'device_id', '_notes_migrated_v1_3'].includes(k)
   );
   if (keysToRemove.length) await chrome.storage.local.remove(keysToRemove);
 }
