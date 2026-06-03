@@ -458,8 +458,8 @@
       <button id="annotate-mean">What does this mean?</button>
       <button id="annotate-explain">Explain more</button>
       <button id="annotate-note">📝 Note</button>
-      <button id="annotate-copy" title="Copy selection to clipboard">📋 Copy</button>
       <button id="annotate-dashboard" title="Open Nabu dashboard">Nabu ↗</button>
+      <button id="annotate-copy" title="Copy selection to clipboard">📋 Copy</button>
       <button id="annotate-close" title="Close" aria-label="Close">×</button>
     `;
     document.body.appendChild(div);
