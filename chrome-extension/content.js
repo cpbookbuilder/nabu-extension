@@ -454,7 +454,7 @@
     div.style.top = `${rect.bottom + window.scrollY + 8}px`;
     div.style.left = `${rect.left + rect.width / 2}px`;
     div.innerHTML = `
-      <button id="annotate-ask">Ask ✦</button>
+      <button id="annotate-ask">Ask AI</button>
       <button id="annotate-mean">What does this mean?</button>
       <button id="annotate-explain">Explain more</button>
       <button id="annotate-note">📝 Note</button>
