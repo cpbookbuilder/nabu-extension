@@ -145,7 +145,7 @@
 
     /* ── Stats strip ────────────────────────────────────────── */
     .stats {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
       margin-bottom: 20px;
     }
     .stat-tile {
@@ -228,21 +228,16 @@
         <div class="stat-label">Questions asked</div>
       </div>
       <div class="stat-tile">
-        <div class="stat-num" id="stat-todos">0</div>
-        <div class="stat-label">Todos added</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-num" id="stat-saved">0</div>
-        <div class="stat-label">Saved</div>
+        <div class="stat-num" id="stat-notes">0</div>
+        <div class="stat-label">Notes</div>
       </div>
     </div>
 
     <!-- Library -->
     <div class="tab-row">
       <div class="tabs">
-        <button class="tab active" data-tab="threads">Threads</button>
-        <button class="tab" data-tab="todos">Todos</button>
-        <button class="tab" data-tab="reminders">Saved</button>
+        <button class="tab active" data-tab="threads">Questions</button>
+        <button class="tab" data-tab="notes">Notes</button>
       </div>
       <button class="btn btn-secondary" id="clear-btn" style="font-size:12px;padding:6px 12px;">Clear</button>
     </div>
