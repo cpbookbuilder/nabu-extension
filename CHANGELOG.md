@@ -19,6 +19,14 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.3.2] — 2026-06-03
+
+### Added
+- Small Nabu icon in every thread/note card header. Click it to jump straight to your dashboard.
+- "Not supported here" toast on Figma and Miro — same as the existing Google Docs notice, so you know up front when text is canvas-rendered and Nabu can't see it.
+
+---
+
 ## [v1.3.1] — 2026-06-03
 
 ### Added
