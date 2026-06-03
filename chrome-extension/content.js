@@ -626,6 +626,7 @@
     root.getElementById('close').onclick = () => closeThread(id);
     root.getElementById('snippet').onclick = () => scrollToAnchor(id);
     root.getElementById('collapse').onclick = () => card.classList.toggle('collapsed');
+    root.getElementById('nabu-icon')?.addEventListener('click', () => safeSendMessage({ type: 'openDashboard' }));
     root.getElementById('inp').addEventListener('input', function () {
       this.style.height = 'auto';
       this.style.height = Math.min(this.scrollHeight, 100) + 'px';
@@ -1110,6 +1111,13 @@
           margin-top: 1px;
           align-self: stretch;
         }
+        #nabu-icon {
+          background: none; border: none; padding: 0; cursor: pointer;
+          flex-shrink: 0; line-height: 0; border-radius: 3px;
+          margin-top: 1px;
+        }
+        #nabu-icon img { width: 14px; height: 14px; display: block; border-radius: 3px; }
+        #nabu-icon:hover { background: #f1f3f4; }
         #snippet {
           flex: 1;
           font-size: 11px;
@@ -1273,6 +1281,9 @@
           </svg>
         </button>
         <div id="bar"></div>
+        <button id="nabu-icon" title="Open Nabu dashboard">
+          <img alt="Nabu" src="${chrome.runtime?.getURL?.('icons/icon32.png') || ''}">
+        </button>
         <div id="snippet">${escapeHtml(snippet)}</div>
         <span id="badge">0</span>
         <button id="close">×</button>

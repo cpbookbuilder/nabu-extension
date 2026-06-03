@@ -18,7 +18,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["katex.min.css", "fonts/*"],
+      "resources": ["katex.min.css", "fonts/*", "icons/*"],
       "matches": ["https://*/*"]
     }
   ],
