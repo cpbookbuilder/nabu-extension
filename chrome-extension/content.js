@@ -458,6 +458,7 @@
       <button id="annotate-mean">What does this mean?</button>
       <button id="annotate-explain">Explain more</button>
       <button id="annotate-note">📝 Note</button>
+      <button id="annotate-copy" title="Copy selection to clipboard">📋 Copy</button>
       <button id="annotate-dashboard" title="Open Nabu dashboard">Nabu ↗</button>
       <button id="annotate-close" title="Close" aria-label="Close">×</button>
     `;
@@ -506,9 +507,28 @@
       window.getSelection()?.removeAllRanges();
     });
 
+    document.getElementById('annotate-copy').addEventListener('click', async () => {
+      clearTimeout(popoverTimer);
+      const btn = document.getElementById('annotate-copy');
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = '✓ Copied';
+        setTimeout(() => removePopover(), 600);
+      } catch (_) {
+        // Fallback for pages that block clipboard API.
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); btn.textContent = '✓ Copied'; }
+        catch (_) { btn.textContent = '✗ Copy blocked'; }
+        ta.remove();
+        setTimeout(() => removePopover(), 800);
+      }
+    });
+
     document.getElementById('annotate-dashboard').addEventListener('click', () => {
       clearTimeout(popoverTimer);
-      chrome.runtime.sendMessage({ type: 'openDashboard' });
+      safeSendMessage({ type: 'openDashboard' });
       removePopover();
       window.getSelection()?.removeAllRanges();
     });
@@ -519,6 +539,19 @@
       removePopover();
       window.getSelection()?.removeAllRanges();
     });
+  }
+
+  // Send a message to the background worker, swallowing the
+  // "Extension context invalidated" error that fires when the page has a
+  // stale content script (extension was updated/reloaded while the tab was
+  // open). Shows a one-time toast asking the user to refresh in that case.
+  function safeSendMessage(msg) {
+    try {
+      if (!chrome.runtime?.id) throw new Error('no runtime');
+      chrome.runtime.sendMessage(msg);
+    } catch (_) {
+      showToast('Nabu was updated — refresh this page to use it.');
+    }
   }
 
   function showToast(msg) {
@@ -753,7 +786,7 @@
             // Open via the background worker (chrome.tabs.create) rather than
             // window.open from the page context — keeps the content script
             // from directly opening backend-provided URLs.
-            chrome.runtime.sendMessage({ type: 'openUrl', url });
+            safeSendMessage({ type: 'openUrl', url });
             upgradeLink.textContent = 'Upgrade for $4.99/mo';
           } catch (err) {
             upgradeLink.textContent = `Error: ${err.message}`;
