@@ -19,6 +19,22 @@ Backend-only changes don't need an entry (they deploy continuously).
 
 ---
 
+## [v1.3.1] — 2026-06-03
+
+### Added
+- 📋 **Copy** button in the selection popover — copies the highlighted text to your clipboard in one click.
+
+### Changed
+- The selection popover **"Ask ✦"** button is now **"Ask AI"** — clearer about what it does.
+- The **Note** card now matches the Ask card: same header (collapse + colored bar + snippet + badge + close), same footer input. Hitting Enter saves the typed text as a note bubble inside the body instead of sending to the AI. Multiple notes can stack on the same highlight; the badge counts them. Notes from v1.3.0 migrate automatically.
+- Note input placeholder makes it explicit that the note text is **optional** — the highlight alone is a valid bookmark.
+- Popover layout: Copy moved to sit next to the close ×, after the Nabu dashboard link.
+
+### Fixed
+- When the extension auto-updates while you have a tab open, the stale content script no longer throws an "Extension context invalidated" error. You'll see a small toast asking you to refresh the page instead.
+
+---
+
 ## [v1.3.0] — 2026-06-03
 
 ### Added
